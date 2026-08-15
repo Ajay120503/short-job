@@ -17,17 +17,60 @@ const userSchema = new mongoose.Schema(
       trim: true,
       match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email'],
     },
+    phone: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+    },
     password: {
       type: String,
       required: [true, 'Password is required'],
       minlength: [6, 'Password must be at least 6 characters'],
       select: false,
     },
-    role: {
+    authMethod: {
       type: String,
-      enum: ['student', 'teacher', 'professor', 'hod', 'principal'],
-      default: 'student',
+      enum: ['email', 'google', 'phone'],
+      default: 'email',
     },
+    otp: { type: String, select: false },
+    otpExpiry: { type: Date },
+    otpAttempts: { type: Number, default: 0 },
+    otpLastSentAt: { type: Date },
+    otpResendCount: { type: Number, default: 0 },
+    otpResendWindowStart: { type: Date },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    isPhoneVerified: {
+      type: Boolean,
+      default: false,
+    },
+    badges: [{
+      type: {
+        type: String,
+        enum: [
+          // Academic identity
+          'student', 'teacher', 'professor', 'principal', 'hod',
+          'researcher', 'phd_scholar', 'lecturer',
+          // Institution type
+          'school_member', 'college_member', 'university_member', 'coaching_member',
+          // Skills / domain
+          'stem_expert', 'arts_expert', 'sports_coach', 'counselor',
+          // Trust
+          'verified_institution', 'top_contributor', 'email_verified', 'phone_verified'
+        ]
+      },
+      grantedAt: { type: Date, default: Date.now },
+      grantedBy: { type: String, enum: ['self', 'admin', 'system'], default: 'self' },
+      isActive: { type: Boolean, default: true }
+    }],
     category: {
       type: String,
       enum: ['student', 'school', 'college'],
@@ -45,6 +88,11 @@ const userSchema = new mongoose.Schema(
     institutionPic: {
       url: { type: String, default: '' },
       publicId: { type: String, default: '' },
+    },
+    institutionType: {
+      type: String,
+      enum: ['school', 'college', 'university', 'coaching', 'none', ''],
+      default: 'none',
     },
     bio: {
       type: String,
@@ -130,6 +178,13 @@ const userSchema = new mongoose.Schema(
       uploadedAt: { type: Date, default: Date.now },
     }],
     openToOpportunities: { type: Boolean, default: false },
+    isAdmin: { type: Boolean, default: false },
+    isSuperAdmin: { type: Boolean, default: false },
+    isBlocked: { type: Boolean, default: false },
+    blockedAt: Date,
+    blockedReason: String,
+    adminNotes: { type: String, default: '' },
+    profileStrength: { type: Number, default: 0 },
     skillEndorsements: {
       type: Map,
       of: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],

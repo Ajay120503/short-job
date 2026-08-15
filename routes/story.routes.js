@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middlewares/auth.middleware');
+const { optionalAuth } = require('../middlewares/auth.middleware');
 const { uploadImage } = require('../middlewares/upload.middleware');
 const {
   createStory,
@@ -9,8 +10,8 @@ const {
   deleteStory,
 } = require('../controllers/story.controller');
 
-// All story routes are protected
-router.get('/', authMiddleware, getStories);
+// Stories are public after approval; auth adds own pending stories and view state.
+router.get('/', optionalAuth, getStories);
 router.post('/', authMiddleware, uploadImage.single('image'), createStory);
 router.post('/:id/view', authMiddleware, viewStory);
 router.delete('/:id', authMiddleware, deleteStory);

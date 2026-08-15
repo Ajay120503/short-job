@@ -3,6 +3,9 @@ const router = express.Router();
 const { body } = require('express-validator');
 const {
   register,
+  initiateRegister,
+  verifyRegisterOtp,
+  resendRegistrationOtp,
   login,
   logout,
   verifyEmail,
@@ -19,7 +22,6 @@ const registerValidation = [
   body('name').trim().notEmpty().withMessage('Name is required').isLength({ max: 100 }),
   body('email').isEmail().withMessage('Please enter a valid email'),
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
-  body('role').optional().isIn(['student', 'teacher', 'professor', 'hod', 'principal']),
 ];
 
 const loginValidation = [
@@ -38,6 +40,9 @@ const resetPasswordValidation = [
 ];
 
 // Public routes
+router.post('/register/initiate', registerValidation, initiateRegister);
+router.post('/register/verify-otp', verifyRegisterOtp);
+router.post('/otp/resend', resendRegistrationOtp);
 router.post('/register', registerValidation, register);
 router.post('/login', loginValidation, login);
 router.post('/logout', logout);

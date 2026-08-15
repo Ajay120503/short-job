@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middlewares/auth.middleware');
-const roleMiddleware = require('../middlewares/role.middleware');
+const { optionalAuth } = require('../middlewares/auth.middleware');
 const { uploadImage } = require('../middlewares/upload.middleware');
 const {
   getJobs,
@@ -37,19 +37,19 @@ router.get('/map', getJobsMap);
 router.get('/matched', authMiddleware, getMatchedJobs);
 
 // Public routes
-router.get('/', getJobs);
-router.get('/:id', getJob);
+router.get('/', optionalAuth, getJobs);
+router.get('/:id', optionalAuth, getJob);
 
-// Protected routes - Institution members only
-router.post('/', authMiddleware, roleMiddleware('teacher', 'professor', 'hod', 'principal'), uploadImage.single('image'), createJob);
-router.put('/:id', authMiddleware, roleMiddleware('teacher', 'professor', 'hod', 'principal'), uploadImage.single('image'), updateJob);
-router.delete('/:id', authMiddleware, roleMiddleware('teacher', 'professor', 'hod', 'principal'), deleteJob);
+// Protected routes - any signed-in user can create opportunities; owners can edit/delete.
+router.post('/', authMiddleware, uploadImage.single('image'), createJob);
+router.put('/:id', authMiddleware, uploadImage.single('image'), updateJob);
+router.delete('/:id', authMiddleware, deleteJob);
 
-// Student only - apply to job
-router.post('/:id/apply', authMiddleware, roleMiddleware('student'), uploadImage.single('coverLetter'), applyToJob);
+// General user applicants
+router.post('/:id/apply', authMiddleware, uploadImage.single('coverLetter'), applyToJob);
 
-// Student only - quick apply
-router.post('/:id/quick-apply', authMiddleware, roleMiddleware('student'), quickApply);
+// Profile-strength based quick apply
+router.post('/:id/quick-apply', authMiddleware, quickApply);
 
 // View count
 router.patch('/:id/view', authMiddleware, incrementViewCount);

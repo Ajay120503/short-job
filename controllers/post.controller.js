@@ -3,6 +3,29 @@ const Comment = require('../models/Comment');
 const Notification = require('../models/Notification');
 const { getIO } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
+const { runFakeDetectionRuleOnly } = require('../utils/fakeDetectionRuleOnly');
+
+const hasActiveBadge = (user, badgeType) =>
+  (user.badges || []).some((badge) => badge.type === badgeType && badge.isActive !== false);
+
+const isInstitutionMember = (user) => {
+  const institutionBadges = [
+    'teacher', 'professor', 'hod', 'principal', 'lecturer',
+    'school_member', 'college_member', 'university_member', 'coaching_member',
+  ];
+  return (
+    ['school', 'college'].includes(user?.category) ||
+    institutionBadges.some((badge) => hasActiveBadge(user, badge))
+  );
+};
+
+const canViewContent = (content, user, authorField = 'author') => {
+  if (!content.status || content.status === 'approved') return true;
+  if (!user) return false;
+  if (user.isAdmin || user.isSuperAdmin) return true;
+  const authorId = content[authorField]?._id || content[authorField];
+  return authorId?.toString?.() === user._id.toString();
+};
 
 // @desc    Get feed posts (paginated)
 // @route   GET /api/posts
@@ -13,19 +36,25 @@ const getFeed = async (req, res) => {
     const skip = (page - 1) * limit;
     const { type } = req.query;
 
-    let query = {};
+    let query = { status: 'approved' };
     if (type) {
       query.type = type;
     }
 
-    // If user is logged in, include posts from followed users + their own
+    // Public feed shows all approved content. Logged-in users also see their
+    // own pending/rejected content so moderation state is not confusing.
     if (req.user) {
-      const following = req.user.following || [];
-      query.author = { $in: [...following, req.user._id] };
+      const typeFilter = type ? { type } : {};
+      query = {
+        $or: [
+          { status: 'approved', ...typeFilter },
+          { author: req.user._id, ...typeFilter },
+        ],
+      };
     }
 
     const posts = await Post.find(query)
-      .populate('author', 'name profilePic role category institutionName profilePic openToOpportunities')
+      .populate('author', 'name profilePic badges category institutionName profilePic openToOpportunities')
       .populate({
         path: 'jobPost',
         select: 'title institutionName institutionLogo roleType isPaid stipend currency location deadline description image skillsRequired applicants',
@@ -75,7 +104,7 @@ const createPost = async (req, res) => {
     }
 
     // F11 — Role guard for noticeboard posts
-    if (type === 'noticeboard' && !['teacher', 'professor', 'hod', 'principal'].includes(req.user.role)) {
+    if (type === 'noticeboard' && !isInstitutionMember(req.user)) {
       return res.status(403).json({ message: 'Only institution members can post notices.' });
     }
 
@@ -85,9 +114,13 @@ const createPost = async (req, res) => {
       type: type || 'general',
       tags: tags ? (typeof tags === 'string' ? tags.split(',').map(t => t.trim()) : tags) : [],
       images: [],
+      status: 'pending_review', // New: All posts start in moderation queue
+      moderationMeta: {
+        adminWindowExpiredAt: new Date(Date.now() + 60 * 1000),
+      },
     };
 
-    // F11 — Set expiry for noticeboard posts
+    // Set expiry for noticeboard posts
     if (type === 'noticeboard') {
       postData.noticeboardExpiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
     }
@@ -105,7 +138,10 @@ const createPost = async (req, res) => {
 
     const post = await Post.create(postData);
     const populatedPost = await Post.findById(post._id)
-      .populate('author', 'name profilePic role category institutionName openToOpportunities');
+      .populate('author', 'name profilePic badges category institutionName openToOpportunities');
+
+    // Auto-run fake detection after 60 seconds (using cron job instead of Bull/Redis)
+    // The cron job will handle the 1-minute admin window
 
     res.status(201).json({ success: true, post: populatedPost });
   } catch (error) {
@@ -139,7 +175,7 @@ const updatePost = async (req, res) => {
     // Update type
     if (type !== undefined) {
       // F11 — Role guard for noticeboard posts
-      if (type === 'noticeboard' && !['teacher', 'professor', 'hod', 'principal'].includes(req.user.role)) {
+      if (type === 'noticeboard' && !isInstitutionMember(req.user)) {
         return res.status(403).json({ message: 'Only institution members can post notices.' });
       }
       post.type = type;
@@ -192,7 +228,7 @@ const updatePost = async (req, res) => {
     await post.save();
 
     const populatedPost = await Post.findById(post._id)
-      .populate('author', 'name profilePic role category institutionName openToOpportunities')
+      .populate('author', 'name profilePic badges category institutionName openToOpportunities')
       .populate({
         path: 'jobPost',
         select: 'title institutionName institutionLogo roleType isPaid stipend currency location deadline description image skillsRequired applicants',
@@ -259,6 +295,10 @@ const toggleLike = async (req, res) => {
       return res.status(404).json({ message: 'Post not found.' });
     }
 
+    if (!canViewContent(post, req.user)) {
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+
     const isLiked = post.likes.includes(req.user._id);
 
     if (isLiked) {
@@ -310,6 +350,10 @@ const toggleSave = async (req, res) => {
       return res.status(404).json({ message: 'Post not found.' });
     }
 
+    if (!canViewContent(post, req.user)) {
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+
     const isSaved = post.saves.includes(req.user._id);
 
     if (isSaved) {
@@ -335,8 +379,14 @@ const toggleSave = async (req, res) => {
 // @route   GET /api/posts/saved
 const getSavedPosts = async (req, res) => {
   try {
-    const posts = await Post.find({ saves: req.user._id })
-      .populate('author', 'name profilePic role category institutionName openToOpportunities')
+    const posts = await Post.find({
+      saves: req.user._id,
+      $or: [
+        { status: 'approved' },
+        { author: req.user._id },
+      ],
+    })
+      .populate('author', 'name profilePic badges category institutionName openToOpportunities')
       .populate({
         path: 'jobPost',
         select: 'title institutionName institutionLogo roleType isPaid stipend currency location deadline description image skillsRequired applicants',
@@ -367,7 +417,7 @@ const getSavedPosts = async (req, res) => {
 const getPost = async (req, res) => {
   try {
     const post = await Post.findById(req.params.id)
-      .populate('author', 'name profilePic role category institutionName openToOpportunities')
+      .populate('author', 'name profilePic badges category institutionName openToOpportunities')
       .populate({
         path: 'jobPost',
         select: 'title institutionName institutionLogo roleType isPaid stipend currency location deadline description image skillsRequired applicants',
@@ -388,6 +438,10 @@ const getPost = async (req, res) => {
       return res.status(404).json({ message: 'Post not found.' });
     }
 
+    if (!canViewContent(post, req.user)) {
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+
     res.json({ success: true, post });
   } catch (error) {
     console.error('Get post error:', error);
@@ -401,15 +455,66 @@ const getNoticeboardPosts = async (req, res) => {
   try {
     const notices = await Post.find({
       type: 'noticeboard',
+      status: 'approved',
       noticeboardExpiresAt: { $gt: new Date() },
     })
-      .populate('author', 'name profilePic role category institutionName institutionPic openToOpportunities')
+      .populate('author', 'name profilePic badges category institutionName institutionPic openToOpportunities')
       .sort({ createdAt: -1 })
       .limit(5);
 
     res.json({ success: true, notices });
   } catch (error) {
     console.error('Get noticeboard posts error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
+// @desc    Auto-moderate pending posts using rule-based detection
+// @route   POST /api/posts/:id/moderate
+const moderatePost = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+
+    if (post.status !== 'pending_review') {
+      return res.status(400).json({ message: 'Post is not pending review.' });
+    }
+
+    // Run rule-based fake detection
+    const result = await runFakeDetectionRuleOnly(post, 'post');
+
+    // Apply decision
+    post.status = result.approved ? 'approved' : 'rejected';
+    post.moderationMeta = {
+      reviewedAt: new Date(),
+      reviewMethod: result.approved ? 'auto_approved' : 'auto_rejected',
+      autoScore: result.score,
+      autoFlags: result.flags,
+    };
+    await post.save();
+
+    // Notify content creator
+    try {
+      const io = getIO();
+      io.to(`user_${post.author}`).emit('content_moderation', {
+        type: 'post',
+        id: post._id,
+        decision: post.status,
+        score: result.score,
+        flags: result.flags,
+      });
+    } catch (socketErr) {}
+
+    res.json({
+      success: true,
+      post,
+      moderationResult: result,
+    });
+  } catch (error) {
+    console.error('Moderate post error:', error);
     res.status(500).json({ message: 'Server error.' });
   }
 };
@@ -424,4 +529,5 @@ module.exports = {
   getSavedPosts,
   getPost,
   getNoticeboardPosts,
+  moderatePost,
 };

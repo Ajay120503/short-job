@@ -6,12 +6,15 @@ const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
 const dotenv = require('dotenv');
 
-// Load environment variables
 dotenv.config();
 
 // Import configs
 const connectDB = require('./config/db');
 const { initSocket } = require('./config/socket');
+const Post = require('./models/Post');
+const JobPost = require('./models/JobPost');
+const Story = require('./models/Story');
+const { runFakeDetectionRuleOnly } = require('./utils/fakeDetectionRuleOnly');
 
 // Import routes
 const authRoutes = require('./routes/auth.routes');
@@ -22,6 +25,7 @@ const jobRoutes = require('./routes/job.routes');
 const chatRoutes = require('./routes/chat.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const storyRoutes = require('./routes/story.routes');
+const adminRoutes = require('./routes/admin.routes'); // Add admin routes
 
 // Initialize express
 const app = express();
@@ -33,6 +37,65 @@ const server = http.createServer(app);
 
 // Initialize Socket.io
 const io = initSocket(server);
+
+const autoModerationModels = [
+  { type: 'post', Model: Post, populate: 'author' },
+  { type: 'job', Model: JobPost, populate: 'postedBy' },
+  { type: 'story', Model: Story, populate: 'author' },
+];
+
+const syncAutoModerationLinks = async (type, item) => {
+  if (type === 'job') {
+    await Post.updateMany(
+      { jobPost: item._id },
+      { status: item.status, moderationMeta: item.moderationMeta }
+    );
+  }
+
+  if (type === 'post' && item.jobPost) {
+    await JobPost.findByIdAndUpdate(item.jobPost, {
+      status: item.status,
+      moderationMeta: item.moderationMeta,
+    });
+  }
+};
+
+const runAutoModerationPass = async () => {
+  const now = new Date();
+
+  for (const config of autoModerationModels) {
+    const query = {
+      status: 'pending_review',
+      'moderationMeta.adminWindowExpiredAt': { $lte: now },
+    };
+    if (config.type === 'post') {
+      query.type = { $ne: 'job' };
+    }
+
+    const items = await config.Model.find(query)
+      .populate(config.populate)
+      .limit(25);
+
+    for (const item of items) {
+      try {
+        const result = await runFakeDetectionRuleOnly(item, config.type);
+        item.status = result.approved ? 'approved' : 'rejected';
+        item.moderationMeta = {
+          ...(item.moderationMeta?.toObject?.() || item.moderationMeta || {}),
+          reviewedAt: new Date(),
+          reviewMethod: result.approved ? 'auto_approved' : 'auto_rejected',
+          reviewNotes: result.reason,
+          autoScore: result.score,
+          autoFlags: result.flags,
+        };
+        await item.save();
+        await syncAutoModerationLinks(config.type, item);
+      } catch (error) {
+        console.error(`Auto moderation failed for ${config.type} ${item._id}:`, error.message);
+      }
+    }
+  }
+};
 
 // Security middleware
 app.use(
@@ -108,6 +171,7 @@ app.use('/api/jobs', jobRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/stories', storyRoutes);
+app.use('/api/admin', adminRoutes); // Add admin routes
 
 // 404 handler
 app.use((req, res) => {
@@ -173,6 +237,16 @@ const startServer = async () => {
       console.log(`API URL: http://localhost:${PORT}/api`);
       console.log(`Client URL: ${process.env.CLIENT_URL || 'http://localhost:5173'}`);
     });
+
+    runAutoModerationPass().catch((error) => {
+      console.error('Initial auto moderation pass failed:', error.message);
+    });
+
+    setInterval(() => {
+      runAutoModerationPass().catch((error) => {
+        console.error('Auto moderation pass failed:', error.message);
+      });
+    }, 30 * 1000);
   } catch (error) {
     console.error('Failed to start server:', error.message);
     process.exit(1);

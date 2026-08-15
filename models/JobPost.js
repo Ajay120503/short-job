@@ -96,6 +96,23 @@ const jobPostSchema = new mongoose.Schema(
       answeredAt: { type: Date },
       createdAt: { type: Date, default: Date.now },
     }],
+    status: {
+      type: String,
+      enum: ['pending_review', 'approved', 'rejected', 'flagged'],
+      default: 'approved',
+    },
+    moderationMeta: {
+      reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      reviewedAt: Date,
+      reviewMethod: {
+        type: String,
+        enum: ['admin_manual', 'auto_approved', 'auto_rejected', 'auto_flagged'],
+      },
+      reviewNotes: String,
+      autoScore: Number,
+      autoFlags: [String],
+      adminWindowExpiredAt: Date,
+    },
   },
   {
     timestamps: true,
@@ -107,5 +124,6 @@ jobPostSchema.index({ title: 'text', description: 'text', skillsRequired: 'text'
 jobPostSchema.index({ postedBy: 1, createdAt: -1 });
 jobPostSchema.index({ isActive: 1, deadline: 1 });
 jobPostSchema.index({ location: 1, isPaid: 1 });
+jobPostSchema.index({ status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('JobPost', jobPostSchema);

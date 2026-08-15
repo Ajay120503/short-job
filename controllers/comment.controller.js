@@ -3,6 +3,13 @@ const Post = require('../models/Post');
 const Notification = require('../models/Notification');
 const { getIO } = require('../config/socket');
 
+const canViewPost = (post, user) => {
+  if (!post.status || post.status === 'approved') return true;
+  if (!user) return false;
+  if (user.isAdmin || user.isSuperAdmin) return true;
+  return post.author?.toString?.() === user._id.toString();
+};
+
 // @desc    Get comments for a post
 // @route   GET /api/posts/:postId/comments
 const getComments = async (req, res) => {
@@ -11,6 +18,11 @@ const getComments = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
+
+    const post = await Post.findById(postId).select('author status');
+    if (!post || !canViewPost(post, req.user)) {
+      return res.status(404).json({ message: 'Post not found.' });
+    }
 
     // Get top-level comments only (parentComment is null)
     const comments = await Comment.find({ post: postId, parentComment: null })
@@ -57,6 +69,10 @@ const addComment = async (req, res) => {
 
     const post = await Post.findById(postId);
     if (!post) {
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+
+    if (!canViewPost(post, req.user)) {
       return res.status(404).json({ message: 'Post not found.' });
     }
 

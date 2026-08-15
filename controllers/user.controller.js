@@ -5,6 +5,26 @@ const Notification = require('../models/Notification');
 const { getIO } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 
+const SELF_BADGES = [
+  'student', 'teacher', 'professor', 'principal', 'hod',
+  'researcher', 'phd_scholar', 'lecturer',
+  'school_member', 'college_member', 'university_member', 'coaching_member',
+  'stem_expert', 'arts_expert', 'sports_coach', 'counselor',
+];
+
+const hasActiveBadge = (user, badgeType) =>
+  (user.badges || []).some((badge) => badge.type === badgeType && badge.isActive !== false);
+
+const canUseOpportunityStatus = (user) =>
+  Boolean(user) && !['school_member', 'college_member', 'university_member', 'coaching_member'].some((badge) => hasActiveBadge(user, badge));
+
+const isOwnerOrAdmin = (req, ownerId) =>
+  req.user?._id?.toString() === ownerId?.toString() ||
+  req.user?.isAdmin ||
+  req.user?.role === 'admin' ||
+  hasActiveBadge(req.user, 'admin') ||
+  hasActiveBadge(req.user, 'moderator');
+
 // @desc    Get user profile by ID
 // @route   GET /api/users/:id
 const getUserProfile = async (req, res) => {
@@ -166,14 +186,21 @@ const searchUsers = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    let query = {};
+    let query = {
+      isActive: { $ne: false },
+      isBlocked: { $ne: true },
+    };
 
     if (q) {
       query.$text = { $search: q };
     }
 
     if (role) {
-      query.role = role;
+      query.$or = [
+        { role },
+        { category: role },
+        { badges: { $elemMatch: { type: role, isActive: { $ne: false } } } },
+      ];
     }
 
     if (institution) {
@@ -212,13 +239,19 @@ const getUserPosts = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    const posts = await Post.find({ author: req.params.id })
-      .populate('author', 'name profilePic role category institutionName openToOpportunities')
+    const query = { author: req.params.id };
+    if (!isOwnerOrAdmin(req, req.params.id)) {
+      query.status = 'approved';
+    }
+
+    const posts = await Post.find(query)
+      .populate('author', 'name profilePic role category institutionName openToOpportunities badges')
+      .populate('jobPost', 'title institutionName roleType isPaid stipend currency location deadline status')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
-    const total = await Post.countDocuments({ author: req.params.id });
+    const total = await Post.countDocuments(query);
 
     res.json({
       success: true,
@@ -240,8 +273,14 @@ const getUserPosts = async (req, res) => {
 // @route   GET /api/users/:id/jobs
 const getUserJobs = async (req, res) => {
   try {
-    const jobs = await JobPost.find({ postedBy: req.params.id })
-      .populate('postedBy', 'name profilePic role category openToOpportunities')
+    const query = { postedBy: req.params.id };
+    if (!isOwnerOrAdmin(req, req.params.id)) {
+      query.status = 'approved';
+      query.isActive = true;
+    }
+
+    const jobs = await JobPost.find(query)
+      .populate('postedBy', 'name profilePic role category openToOpportunities badges')
       .sort({ createdAt: -1 });
 
     res.json({ success: true, jobs });
@@ -398,8 +437,8 @@ const toggleOpportunityStatus = async (req, res) => {
       return res.status(400).json({ message: 'openToOpportunities must be a boolean.' });
     }
 
-    if (req.user.role !== 'student') {
-      return res.status(403).json({ message: 'Only students can toggle this setting.' });
+    if (!canUseOpportunityStatus(req.user)) {
+      return res.status(403).json({ message: 'This account cannot toggle opportunity status.' });
     }
 
     const user = await User.findByIdAndUpdate(
@@ -441,6 +480,59 @@ const updateTimeline = async (req, res) => {
   }
 };
 
+// @desc    Update self-selected badges
+// @route   POST /api/users/me/badges
+const updateMyBadges = async (req, res) => {
+  try {
+    const { badges } = req.body;
+    if (!Array.isArray(badges)) {
+      return res.status(400).json({ message: 'Badges must be an array.' });
+    }
+
+    const uniqueBadges = [...new Set(badges)];
+    const invalidBadge = uniqueBadges.find((badge) => !SELF_BADGES.includes(badge));
+    if (invalidBadge) {
+      return res.status(400).json({ message: `Badge "${invalidBadge}" cannot be self-assigned.` });
+    }
+
+    const user = await User.findById(req.user._id);
+    const nonSelfBadges = (user.badges || []).filter((badge) => badge.grantedBy !== 'self');
+    const selfBadges = uniqueBadges.map((badge) => ({
+      type: badge,
+      grantedBy: 'self',
+      grantedAt: new Date(),
+      isActive: true,
+    }));
+
+    user.badges = [...nonSelfBadges, ...selfBadges];
+    await user.save();
+
+    res.json({ success: true, badges: user.badges, user });
+  } catch (error) {
+    console.error('Update badges error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
+// @desc    Get active badges for a user
+// @route   GET /api/users/:id/badges
+const getUserBadges = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select('badges');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    res.json({
+      success: true,
+      badges: (user.badges || []).filter((badge) => badge.isActive !== false),
+    });
+  } catch (error) {
+    console.error('Get user badges error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
 module.exports = {
   getUserProfile,
   updateProfile,
@@ -455,4 +547,6 @@ module.exports = {
   endorseSkill,
   toggleOpportunityStatus,
   updateTimeline,
+  updateMyBadges,
+  getUserBadges,
 };

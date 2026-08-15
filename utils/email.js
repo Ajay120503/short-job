@@ -71,4 +71,31 @@ const sendPasswordResetOTP = async (email, otp) => {
   });
 };
 
-module.exports = { sendVerificationEmail, sendPasswordResetOTP };
+const sendRegistrationOTP = async (email, name, otp) => {
+  await transporter.sendMail({
+    from: `"EduConnect" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: 'Your EduConnect Verification Code',
+    html: `
+      <div style="max-width: 600px; margin: auto; padding: 20px; font-family: 'Inter', Arial, sans-serif; background-color: #F0F4FF; border-radius: 12px;">
+        <div style="text-align: center; padding: 20px;">
+          <h1 style="color: #4F46E5; font-family: 'Poppins', sans-serif;">EduConnect</h1>
+        </div>
+        <div style="background: white; padding: 30px; border-radius: 8px; text-align: center;">
+          <h2 style="color: #1E293B;">Welcome, ${name}!</h2>
+          <p style="color: #475569; font-size: 15px; line-height: 1.6;">
+            Use this code to verify your email and activate your account:
+          </p>
+          <div style="margin: 20px 0; padding: 15px; background-color: #EEF2FF; border-radius: 8px;">
+            <span style="font-size: 32px; font-weight: 700; color: #4F46E5; letter-spacing: 8px;">${otp}</span>
+          </div>
+          <p style="color: #94A3B8; font-size: 12px; margin-top: 20px;">
+            This code expires in 10 minutes. If you didn't create an account, please ignore this email.
+          </p>
+        </div>
+      </div>
+    `,
+  });
+};
+
+module.exports = { sendVerificationEmail, sendPasswordResetOTP, sendRegistrationOTP };

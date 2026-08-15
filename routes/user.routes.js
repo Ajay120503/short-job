@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middlewares/auth.middleware');
+const { optionalAuth } = require('../middlewares/auth.middleware');
 const { uploadProfile } = require('../middlewares/upload.middleware');
 const {
   getUserProfile,
@@ -16,19 +17,23 @@ const {
   endorseSkill,
   toggleOpportunityStatus,
   updateTimeline,
+  updateMyBadges,
+  getUserBadges,
 } = require('../controllers/user.controller');
 
 // Static routes MUST be before /:id
 router.patch('/me/opportunity-status', authMiddleware, toggleOpportunityStatus);
+router.post('/me/badges', authMiddleware, updateMyBadges);
 router.post('/request-verification', authMiddleware, uploadProfile.single('document'), requestVerification);
 
 // Public routes
 router.get('/search', searchUsers);
-router.get('/:id', getUserProfile);
-router.get('/:id/posts', getUserPosts);
-router.get('/:id/jobs', getUserJobs);
+router.get('/:id', optionalAuth, getUserProfile);
+router.get('/:id/posts', optionalAuth, getUserPosts);
+router.get('/:id/jobs', optionalAuth, getUserJobs);
 router.get('/:id/followers', getFollowers);
 router.get('/:id/following', getFollowing);
+router.get('/:id/badges', getUserBadges);
 
 // Protected routes
 router.put('/:id', authMiddleware, uploadProfile.fields([

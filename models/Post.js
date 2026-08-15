@@ -48,6 +48,23 @@ const postSchema = new mongoose.Schema(
       default: null,
     },
     noticeboardExpiresAt: { type: Date },
+    status: {
+      type: String,
+      enum: ['pending_review', 'approved', 'rejected', 'flagged'],
+      default: 'approved',
+    },
+    moderationMeta: {
+      reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      reviewedAt: Date,
+      reviewMethod: {
+        type: String,
+        enum: ['admin_manual', 'auto_approved', 'auto_rejected', 'auto_flagged'],
+      },
+      reviewNotes: String,
+      autoScore: Number,
+      autoFlags: [String],
+      adminWindowExpiredAt: Date,
+    },
   },
   {
     timestamps: true,
@@ -57,5 +74,6 @@ const postSchema = new mongoose.Schema(
 // Index for feed queries
 postSchema.index({ author: 1, createdAt: -1 });
 postSchema.index({ type: 1 });
+postSchema.index({ status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Post', postSchema);

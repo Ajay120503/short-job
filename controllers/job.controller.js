@@ -6,6 +6,20 @@ const User = require('../models/User');
 const { getIO } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 
+const hasActiveBadge = (user, badgeType) =>
+  (user.badges || []).some((badge) => badge.type === badgeType && badge.isActive !== false);
+
+const canApplyToJobs = (user) =>
+  Boolean(user) && !['school_member', 'college_member', 'university_member', 'coaching_member'].some((badge) => hasActiveBadge(user, badge));
+
+const canViewJob = (job, user) => {
+  if (!job.status || job.status === 'approved') return true;
+  if (!user) return false;
+  if (user.isAdmin || user.isSuperAdmin) return true;
+  const postedBy = job.postedBy?._id || job.postedBy;
+  return postedBy?.toString?.() === user._id.toString();
+};
+
 // @desc    Get all active jobs
 // @route   GET /api/jobs
 const getJobs = async (req, res) => {
@@ -15,23 +29,33 @@ const getJobs = async (req, res) => {
     const limit = parseInt(limitStr) || 10;
     const skip = (page - 1) * limit;
 
-    let query = { isActive: true };
+    const filters = { isActive: true };
 
     if (paid !== undefined) {
-      query.isPaid = paid === 'true';
+      filters.isPaid = paid === 'true';
     }
 
     if (location) {
-      query.location = location;
+      filters.location = location;
     }
 
     if (roleType) {
-      query.roleType = roleType;
+      filters.roleType = roleType;
     }
 
     if (search) {
-      query.$text = { $search: search };
+      filters.$text = { $search: search };
     }
+
+    const query = req.user
+      ? {
+          ...filters,
+          $or: [
+            { status: 'approved' },
+            { postedBy: req.user._id },
+          ],
+        }
+      : { ...filters, status: 'approved' };
 
     const jobs = await JobPost.find(query)
       .populate('postedBy', 'name profilePic role category institutionName institutionPic openToOpportunities')
@@ -87,6 +111,10 @@ const createJob = async (req, res) => {
       deadline: new Date(deadline),
       contactEmail,
       maxApplicants: maxApplicants || 0,
+      status: 'pending_review',
+      moderationMeta: {
+        adminWindowExpiredAt: new Date(Date.now() + 60 * 1000),
+      },
     };
 
     // Upload job image if provided
@@ -108,6 +136,10 @@ const createJob = async (req, res) => {
       type: 'job',
       text: populatedJob.title,
       jobPost: populatedJob._id,
+      status: 'pending_review',
+      moderationMeta: {
+        adminWindowExpiredAt: new Date(Date.now() + 60 * 1000),
+      },
     });
 
     // Notify followers about new job post
@@ -147,6 +179,10 @@ const getJob = async (req, res) => {
       .populate('applicants', 'name profilePic skills openToOpportunities');
 
     if (!job) {
+      return res.status(404).json({ message: 'Job not found.' });
+    }
+
+    if (!canViewJob(job, req.user)) {
       return res.status(404).json({ message: 'Job not found.' });
     }
 
@@ -259,7 +295,11 @@ const applyToJob = async (req, res) => {
       return res.status(404).json({ message: 'Job not found.' });
     }
 
-    if (!job.isActive) {
+    if (job.postedBy.toString() === req.user._id.toString()) {
+      return res.status(400).json({ message: 'You cannot apply to your own opportunity.' });
+    }
+
+    if (!job.isActive || job.status !== 'approved') {
       return res.status(400).json({ message: 'This job is no longer accepting applications.' });
     }
 
@@ -472,11 +512,11 @@ const getMyJobs = async (req, res) => {
 const getMatchedJobs = async (req, res) => {
   try {
     const student = await User.findById(req.user._id);
-    if (!student || student.role !== 'student') {
-      return res.status(403).json({ message: 'Only students can get matched jobs.' });
+    if (!student || !canApplyToJobs(student)) {
+      return res.status(403).json({ message: 'This account cannot use matched jobs.' });
     }
 
-    const jobs = await JobPost.find({ isActive: true })
+    const jobs = await JobPost.find({ isActive: true, status: 'approved' })
       .populate('postedBy', 'name profilePic role category institutionName institutionPic openToOpportunities');
 
     const studentSkills = (student.skills || []).map(s => s.toLowerCase().trim());
@@ -534,7 +574,7 @@ const incrementViewCount = async (req, res) => {
 const getJobsMap = async (req, res) => {
   try {
     const { city, state } = req.query;
-    let query = { isActive: true };
+    let query = { isActive: true, status: 'approved' };
 
     const jobs = await JobPost.find(query)
       .select('title institutionName institutionLogo isPaid roleType coordinates location postedBy')
@@ -562,8 +602,8 @@ const getJobsMap = async (req, res) => {
 // @route   POST /api/jobs/:id/quick-apply
 const quickApply = async (req, res) => {
   try {
-    if (req.user.role !== 'student') {
-      return res.status(403).json({ message: 'Only students can quick apply.' });
+    if (!canApplyToJobs(req.user)) {
+      return res.status(403).json({ message: 'This account cannot quick apply.' });
     }
 
     const job = await JobPost.findById(req.params.id);
@@ -571,7 +611,11 @@ const quickApply = async (req, res) => {
       return res.status(404).json({ message: 'Job not found.' });
     }
 
-    if (!job.isActive) {
+    if (job.postedBy.toString() === req.user._id.toString()) {
+      return res.status(400).json({ message: 'You cannot apply to your own opportunity.' });
+    }
+
+    if (!job.isActive || job.status !== 'approved') {
       return res.status(400).json({ message: 'This job is no longer accepting applications.' });
     }
 
@@ -647,6 +691,10 @@ const addQnAQuestion = async (req, res) => {
 
     const job = await JobPost.findById(req.params.id);
     if (!job) {
+      return res.status(404).json({ message: 'Job not found.' });
+    }
+
+    if (!canViewJob(job, req.user)) {
       return res.status(404).json({ message: 'Job not found.' });
     }
 

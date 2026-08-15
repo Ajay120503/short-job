@@ -1,14 +1,10 @@
 const Story = require('../models/Story');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 
-// @desc    F13 — Create a story (institution members only)
+// @desc    F13 — Create a story
 // @route   POST /api/stories
 const createStory = async (req, res) => {
   try {
-    if (!['teacher', 'professor', 'hod', 'principal'].includes(req.user.role)) {
-      return res.status(403).json({ message: 'Only institution members can create stories.' });
-    }
-
     const { text } = req.body;
     if (!req.file && !text) {
       return res.status(400).json({ message: 'Story must have an image or text.' });
@@ -17,6 +13,10 @@ const createStory = async (req, res) => {
     const storyData = {
       author: req.user._id,
       text: text || '',
+      status: 'pending_review',
+      moderationMeta: {
+        adminWindowExpiredAt: new Date(Date.now() + 60 * 1000),
+      },
     };
 
     if (req.file) {
@@ -38,14 +38,20 @@ const createStory = async (req, res) => {
   }
 };
 
-// @desc    F13 — Get stories (from followed users and own)
+// @desc    F13 — Get public approved stories and own pending stories
 // @route   GET /api/stories
 const getStories = async (req, res) => {
   try {
-    const following = req.user.following || [];
-    const authorIds = [...following, req.user._id];
+    const query = req.user
+      ? {
+          $or: [
+            { status: 'approved' },
+            { author: req.user._id },
+          ],
+        }
+      : { status: 'approved' };
 
-    const stories = await Story.find({ author: { $in: authorIds } })
+    const stories = await Story.find(query)
       .populate('author', 'name profilePic institutionName institutionPic openToOpportunities')
       .sort({ createdAt: -1 });
 
