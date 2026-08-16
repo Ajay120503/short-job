@@ -4,6 +4,10 @@ const JobPost = require('../models/JobPost');
 const Story = require('../models/Story');
 const Notification = require('../models/Notification');
 const { getIO } = require('../config/socket');
+const {
+  getAdminSettings: readAdminSettings,
+  updateAdminSettings: saveAdminSettings,
+} = require('../utils/adminSettings');
 
 const CONTENT_MODELS = {
   post: { Model: Post, authorField: 'author', populate: 'author' },
@@ -24,15 +28,6 @@ const syncLinkedJobFeedPost = async (type, content, status, moderationMeta) => {
   if (type === 'post' && content.jobPost) {
     await JobPost.findByIdAndUpdate(content.jobPost, { status, moderationMeta });
   }
-};
-
-let adminSettings = {
-  autoApprove: false,
-  autoBlockThreshold: 3,
-  emailNotifications: true,
-  moderationEnabled: true,
-  requireReviewNewUsers: true,
-  contentModerationRules: true,
 };
 
 // @desc    Get all users (admin)
@@ -340,11 +335,14 @@ const approveContent = async (req, res) => {
 
     // Notify content creator
     try {
-      const io = getIO();
-      io.to(`user_${content[config.authorField]}`).emit('content_approved', {
-        type,
-        id: content._id,
-      });
+      const settings = await readAdminSettings();
+      if (settings.notifyCreators) {
+        const io = getIO();
+        io.to(`user_${content[config.authorField]}`).emit('content_approved', {
+          type,
+          id: content._id,
+        });
+      }
     } catch (socketErr) {}
 
     res.json({ success: true, content });
@@ -366,6 +364,11 @@ const rejectContent = async (req, res) => {
       return res.status(400).json({ message: 'Invalid content type.' });
     }
 
+    const settings = await readAdminSettings();
+    if (settings.requireRejectReason && !body.notes?.trim()) {
+      return res.status(400).json({ message: 'Rejection notes are required by admin settings.' });
+    }
+
     const content = await config.Model.findById(id);
 
     if (!content) {
@@ -384,12 +387,14 @@ const rejectContent = async (req, res) => {
 
     // Notify content creator
     try {
-      const io = getIO();
-      io.to(`user_${content[config.authorField]}`).emit('content_rejected', {
-        type,
-        id: content._id,
-        reason: body.notes,
-      });
+      if (settings.notifyCreators) {
+        const io = getIO();
+        io.to(`user_${content[config.authorField]}`).emit('content_rejected', {
+          type,
+          id: content._id,
+          reason: body.notes,
+        });
+      }
     } catch (socketErr) {}
 
     res.json({ success: true, content });
@@ -402,18 +407,25 @@ const rejectContent = async (req, res) => {
 // @desc    Get admin settings
 // @route   GET /api/admin/settings
 const getAdminSettings = async (req, res) => {
-  res.json({ success: true, settings: adminSettings });
+  try {
+    const settings = await readAdminSettings();
+    res.json({ success: true, settings });
+  } catch (error) {
+    console.error('Get admin settings error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
 };
 
 // @desc    Update admin settings
 // @route   PUT /api/admin/settings
 const updateAdminSettings = async (req, res) => {
-  adminSettings = {
-    ...adminSettings,
-    ...req.body,
-  };
-
-  res.json({ success: true, settings: adminSettings });
+  try {
+    const settings = await saveAdminSettings(req.body || {});
+    res.json({ success: true, settings });
+  } catch (error) {
+    console.error('Update admin settings error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
 };
 
 module.exports = {

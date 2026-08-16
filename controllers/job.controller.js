@@ -5,6 +5,7 @@ const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { getIO } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
+const { getInitialModerationState } = require('../utils/adminSettings');
 
 const hasActiveBadge = (user, badgeType) =>
   (user.badges || []).some((badge) => badge.type === badgeType && badge.isActive !== false);
@@ -95,6 +96,8 @@ const createJob = async (req, res) => {
       return res.status(400).json({ message: 'Title, description, deadline, and contact email are required.' });
     }
 
+    const moderationState = await getInitialModerationState('job');
+
     const jobData = {
       postedBy: req.user._id,
       institutionName: institutionName || req.user.institutionName || '',
@@ -111,10 +114,7 @@ const createJob = async (req, res) => {
       deadline: new Date(deadline),
       contactEmail,
       maxApplicants: maxApplicants || 0,
-      status: 'pending_review',
-      moderationMeta: {
-        adminWindowExpiredAt: new Date(Date.now() + 60 * 1000),
-      },
+      ...moderationState,
     };
 
     // Upload job image if provided
@@ -136,10 +136,8 @@ const createJob = async (req, res) => {
       type: 'job',
       text: populatedJob.title,
       jobPost: populatedJob._id,
-      status: 'pending_review',
-      moderationMeta: {
-        adminWindowExpiredAt: new Date(Date.now() + 60 * 1000),
-      },
+      status: moderationState.status,
+      moderationMeta: moderationState.moderationMeta,
     });
 
     // Notify followers about new job post

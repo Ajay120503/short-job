@@ -1,5 +1,6 @@
 const Story = require('../models/Story');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
+const { getInitialModerationState } = require('../utils/adminSettings');
 
 // @desc    F13 — Create a story
 // @route   POST /api/stories
@@ -10,13 +11,12 @@ const createStory = async (req, res) => {
       return res.status(400).json({ message: 'Story must have an image or text.' });
     }
 
+    const moderationState = await getInitialModerationState('story');
+
     const storyData = {
       author: req.user._id,
       text: text || '',
-      status: 'pending_review',
-      moderationMeta: {
-        adminWindowExpiredAt: new Date(Date.now() + 60 * 1000),
-      },
+      ...moderationState,
     };
 
     if (req.file) {

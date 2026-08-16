@@ -15,6 +15,7 @@ const Post = require('./models/Post');
 const JobPost = require('./models/JobPost');
 const Story = require('./models/Story');
 const { runFakeDetectionRuleOnly } = require('./utils/fakeDetectionRuleOnly');
+const { getAdminSettings } = require('./utils/adminSettings');
 
 // Import routes
 const authRoutes = require('./routes/auth.routes');
@@ -44,6 +45,12 @@ const autoModerationModels = [
   { type: 'story', Model: Story, populate: 'author' },
 ];
 
+const moderationTypeKeys = {
+  post: 'posts',
+  job: 'jobs',
+  story: 'stories',
+};
+
 const syncAutoModerationLinks = async (type, item) => {
   if (type === 'job') {
     await Post.updateMany(
@@ -61,9 +68,19 @@ const syncAutoModerationLinks = async (type, item) => {
 };
 
 const runAutoModerationPass = async () => {
+  const settings = await getAdminSettings();
+  if (!settings.moderationEnabled || !settings.autoModerationEnabled) {
+    return;
+  }
+
   const now = new Date();
 
   for (const config of autoModerationModels) {
+    const typeKey = moderationTypeKeys[config.type];
+    if (settings.moderationContentTypes?.[typeKey] === false) {
+      continue;
+    }
+
     const query = {
       status: 'pending_review',
       'moderationMeta.adminWindowExpiredAt': { $lte: now },

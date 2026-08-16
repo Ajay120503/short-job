@@ -4,6 +4,7 @@ const Notification = require('../models/Notification');
 const { getIO } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 const { runFakeDetectionRuleOnly } = require('../utils/fakeDetectionRuleOnly');
+const { getInitialModerationState } = require('../utils/adminSettings');
 
 const hasActiveBadge = (user, badgeType) =>
   (user.badges || []).some((badge) => badge.type === badgeType && badge.isActive !== false);
@@ -108,16 +109,15 @@ const createPost = async (req, res) => {
       return res.status(403).json({ message: 'Only institution members can post notices.' });
     }
 
+    const moderationState = await getInitialModerationState('post');
+
     const postData = {
       author: req.user._id,
       text: text || '',
       type: type || 'general',
       tags: tags ? (typeof tags === 'string' ? tags.split(',').map(t => t.trim()) : tags) : [],
       images: [],
-      status: 'pending_review', // New: All posts start in moderation queue
-      moderationMeta: {
-        adminWindowExpiredAt: new Date(Date.now() + 60 * 1000),
-      },
+      ...moderationState,
     };
 
     // Set expiry for noticeboard posts
