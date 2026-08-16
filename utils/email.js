@@ -87,7 +87,7 @@ const sendRegistrationOTP = async (email, name, otp) => {
             Use this code to verify your email and activate your account:
           </p>
           <div style="margin: 20px 0; padding: 15px; background-color: #EEF2FF; border-radius: 8px;">
-            <span style="font-size: 32px; font-weight: 700; color: #4F46E5; letter-spacing: 8px;">${otp}</span>
+            <span style="font-size: 32px; font-weight: 700; color: #4F46E5; letter-spacing: 8px;">  ${otp}</span>
           </div>
           <p style="color: #94A3B8; font-size: 12px; margin-top: 20px;">
             This code expires in 10 minutes. If you didn't create an account, please ignore this email.

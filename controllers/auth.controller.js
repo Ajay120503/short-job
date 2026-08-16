@@ -127,7 +127,8 @@ const initiateRegister = async (req, res) => {
 const verifyRegisterOtp = async (req, res) => {
   try {
     const { email, otp } = req.body;
-    if (!email || !otp) {
+    const normalizedOtp = String(otp || '').trim();
+    if (!email || !normalizedOtp) {
       return res.status(400).json({ message: 'Email and OTP are required.' });
     }
 
@@ -140,7 +141,7 @@ const verifyRegisterOtp = async (req, res) => {
       return res.status(410).json({ message: 'OTP expired. Please request a new code.' });
     }
 
-    const isValid = await bcrypt.compare(otp, user.otp);
+    const isValid = await bcrypt.compare(normalizedOtp, user.otp);
     if (!isValid) {
       user.otpAttempts = (user.otpAttempts || 0) + 1;
       if (user.otpAttempts >= 3) {
