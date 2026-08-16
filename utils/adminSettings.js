@@ -58,7 +58,7 @@ const getAdminSettings = async () => {
   const doc = await AdminSettings.findOneAndUpdate(
     { key: 'platform' },
     { $setOnInsert: { key: 'platform', ...DEFAULT_ADMIN_SETTINGS } },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
+    { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true }
   );
   return serializeSettings(doc);
 };
@@ -69,7 +69,7 @@ const updateAdminSettings = async (patch = {}) => {
   const doc = await AdminSettings.findOneAndUpdate(
     { key: 'platform' },
     { $set: next },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
+    { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true }
   );
   return serializeSettings(doc);
 };

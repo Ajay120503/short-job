@@ -30,6 +30,38 @@ const syncLinkedJobFeedPost = async (type, content, status, moderationMeta) => {
   }
 };
 
+const syncUserTrustStatus = (user) => {
+  const activeTrustBadges = new Set(
+    (user.badges || [])
+      .filter((badge) => badge.isActive !== false)
+      .map((badge) => badge.type)
+  );
+
+  user.isEmailVerified = activeTrustBadges.has('email_verified');
+  user.isPhoneVerified = activeTrustBadges.has('phone_verified');
+
+  if (activeTrustBadges.has('verified_institution')) {
+    user.isVerified = true;
+    user.verifiedStatus = 'institution';
+    return;
+  }
+
+  if (activeTrustBadges.has('top_contributor')) {
+    user.isVerified = true;
+    user.verifiedStatus = 'top_contributor';
+    return;
+  }
+
+  if (activeTrustBadges.has('email_verified')) {
+    user.isVerified = true;
+    user.verifiedStatus = 'email';
+    return;
+  }
+
+  user.isVerified = false;
+  user.verifiedStatus = 'none';
+};
+
 // @desc    Get all users (admin)
 // @route   GET /api/admin/users
 const getAllUsers = async (req, res) => {
@@ -87,7 +119,7 @@ const blockUser = async (req, res) => {
       blockedAt: new Date(),
       blockedReason: body.reason || 'Violated community guidelines',
       adminNotes: body.notes || '',
-    }, { new: true });
+    }, { returnDocument: 'after' });
 
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
@@ -108,7 +140,7 @@ const unblockUser = async (req, res) => {
       isBlocked: false,
       blockedAt: null,
       blockedReason: null,
-    }, { new: true });
+    }, { returnDocument: 'after' });
 
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
@@ -128,7 +160,7 @@ const updateUserNotes = async (req, res) => {
     const user = await User.findByIdAndUpdate(
       req.params.id,
       { adminNotes: req.body?.notes || '' },
-      { new: true }
+      { returnDocument: 'after' }
     ).select('-password -verificationToken -resetPasswordToken -otp');
 
     if (!user) {
@@ -209,6 +241,7 @@ const grantBadge = async (req, res) => {
       isActive: true,
     });
 
+    syncUserTrustStatus(user);
     await user.save();
 
     res.json({ success: true, user });
@@ -239,6 +272,7 @@ const revokeBadge = async (req, res) => {
     }
 
     user.badges[badgeIndex].isActive = false;
+    syncUserTrustStatus(user);
     await user.save();
 
     res.json({ success: true, user });
