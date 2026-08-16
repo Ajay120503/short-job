@@ -9,6 +9,10 @@ const conversationSchema = new mongoose.Schema(
         required: true,
       },
     ],
+    conversationKey: {
+      type: String,
+      index: true,
+    },
     lastMessage: {
       type: String,
       default: '',

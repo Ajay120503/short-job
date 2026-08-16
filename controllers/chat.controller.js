@@ -3,6 +3,45 @@ const Message = require('../models/Message');
 const { getIO, getOnlineUsers } = require('../config/socket');
 const { uploadToCloudinary } = require('../middlewares/upload.middleware');
 
+const conversationLocks = new Map();
+
+const getConversationKey = (userIdA, userIdB) =>
+  [userIdA.toString(), userIdB.toString()].sort().join(':');
+
+const withConversationLock = async (key, work) => {
+  const previous = conversationLocks.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => {
+    release = resolve;
+  });
+  const entry = previous.then(() => current);
+  conversationLocks.set(key, entry);
+
+  await previous;
+  try {
+    return await work();
+  } finally {
+    release();
+    if (conversationLocks.get(key) === entry) {
+      conversationLocks.delete(key);
+    }
+  }
+};
+
+const hasExactlyParticipants = (conversation, participantIds) => {
+  const current = (conversation.participants || []).map((id) => id.toString()).sort();
+  const expected = participantIds.map((id) => id.toString()).sort();
+  return current.length === expected.length && current.every((id, index) => id === expected[index]);
+};
+
+const normalizeUnreadCounts = (conversation) => {
+  const unreadCounts = conversation.unreadCounts;
+  if (!unreadCounts) return {};
+  if (typeof unreadCounts.toObject === 'function') return unreadCounts.toObject();
+  if (unreadCounts instanceof Map) return Object.fromEntries(unreadCounts);
+  return unreadCounts;
+};
+
 // @desc    Get all conversations for a user
 // @route   GET /api/conversations
 const getConversations = async (req, res) => {
@@ -16,15 +55,23 @@ const getConversations = async (req, res) => {
 
     // Add online status info
     const onlineUsers = getOnlineUsers();
-    const conversationsWithStatus = conversations.map((conv) => {
+    const seenParticipants = new Set();
+    const conversationsWithStatus = [];
+
+    conversations.forEach((conv) => {
       const otherParticipant = conv.participants.find(
         (p) => p._id.toString() !== req.user._id.toString()
       );
-      return {
+      const otherId = otherParticipant?._id?.toString();
+      if (!otherId || seenParticipants.has(otherId)) return;
+      seenParticipants.add(otherId);
+
+      conversationsWithStatus.push({
         ...conv.toObject(),
+        unreadCounts: normalizeUnreadCounts(conv),
         otherParticipant,
         isOnline: onlineUsers.has(otherParticipant?._id.toString()),
-      };
+      });
     });
 
     res.json({ success: true, conversations: conversationsWithStatus });
@@ -91,28 +138,56 @@ const createConversation = async (req, res) => {
       return res.status(400).json({ message: 'Cannot create conversation with yourself.' });
     }
 
-    // Check if conversation already exists
-    const existingConversation = await Conversation.findOne({
-      participants: { $all: [req.user._id, participantId] },
-    }).populate('participants', 'name profilePic role openToOpportunities');
+    const conversationKey = getConversationKey(req.user._id, participantId);
+    const participantIds = [req.user._id, participantId];
 
-    if (existingConversation) {
-      return res.json({ success: true, conversation: existingConversation });
-    }
+    const conversation = await withConversationLock(conversationKey, async () => {
+      // Backfill a key for any older exact one-to-one conversation between these users.
+      await Conversation.updateMany(
+        {
+          participants: { $all: participantIds, $size: 2 },
+          $or: [{ conversationKey: { $exists: false } }, { conversationKey: null }],
+        },
+        { $set: { conversationKey } }
+      );
 
-    // Create new conversation
-    const conversation = await Conversation.create({
-      participants: [req.user._id, participantId],
-      unreadCounts: new Map([
-        [req.user._id.toString(), 0],
-        [participantId, 0],
-      ]),
+      // Check if conversation already exists. $size avoids matching future group chats.
+      const existingConversations = await Conversation.find({
+        $or: [
+          { conversationKey },
+          { participants: { $all: participantIds, $size: 2 } },
+        ],
+      })
+        .sort({ updatedAt: -1 })
+        .populate('participants', 'name profilePic role openToOpportunities');
+
+      const existingConversation = existingConversations.find((item) =>
+        hasExactlyParticipants(item, participantIds)
+      );
+
+      if (existingConversation) {
+        if (existingConversation.conversationKey !== conversationKey) {
+          existingConversation.conversationKey = conversationKey;
+          await existingConversation.save();
+        }
+        return existingConversation;
+      }
+
+      // Create new conversation
+      const created = await Conversation.create({
+        participants: participantIds,
+        conversationKey,
+        unreadCounts: new Map([
+          [req.user._id.toString(), 0],
+          [participantId, 0],
+        ]),
+      });
+
+      return Conversation.findById(created._id)
+        .populate('participants', 'name profilePic role openToOpportunities');
     });
 
-    const populatedConversation = await Conversation.findById(conversation._id)
-      .populate('participants', 'name profilePic role openToOpportunities');
-
-    res.status(201).json({ success: true, conversation: populatedConversation });
+    res.status(201).json({ success: true, conversation });
   } catch (error) {
     console.error('Create conversation error:', error);
     res.status(500).json({ message: 'Server error.' });
