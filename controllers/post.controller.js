@@ -104,11 +104,6 @@ const createPost = async (req, res) => {
       return res.status(400).json({ message: 'Post must have text or images.' });
     }
 
-    // F11 — Role guard for noticeboard posts
-    if (type === 'noticeboard' && !isInstitutionMember(req.user)) {
-      return res.status(403).json({ message: 'Only institution members can post notices.' });
-    }
-
     const moderationState = await getInitialModerationState('post');
 
     const postData = {
@@ -174,10 +169,6 @@ const updatePost = async (req, res) => {
 
     // Update type
     if (type !== undefined) {
-      // F11 — Role guard for noticeboard posts
-      if (type === 'noticeboard' && !isInstitutionMember(req.user)) {
-        return res.status(403).json({ message: 'Only institution members can post notices.' });
-      }
       post.type = type;
       if (type === 'noticeboard') {
         // F11 — Refresh expiry when marked as noticeboard

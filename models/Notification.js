@@ -25,6 +25,8 @@ const notificationSchema = new mongoose.Schema(
         'new_message',
         'welcome',
         'job_qna',
+        'content_approved',
+        'content_rejected',
       ],
       required: true,
     },

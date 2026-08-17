@@ -86,7 +86,11 @@ const runAutoModerationPass = async () => {
       'moderationMeta.adminWindowExpiredAt': { $lte: now },
     };
     if (config.type === 'post') {
-      query.type = { $ne: 'job' };
+      query.$or = [
+        { type: { $ne: 'job' } },
+        { jobPost: null },
+        { jobPost: { $exists: false } },
+      ];
     }
 
     const items = await config.Model.find(query)

@@ -15,8 +15,7 @@ const SELF_BADGES = [
 const hasActiveBadge = (user, badgeType) =>
   (user.badges || []).some((badge) => badge.type === badgeType && badge.isActive !== false);
 
-const canUseOpportunityStatus = (user) =>
-  Boolean(user) && !['school_member', 'college_member', 'university_member', 'coaching_member'].some((badge) => hasActiveBadge(user, badge));
+const canUseOpportunityStatus = (user) => Boolean(user);
 
 const isOwnerOrAdmin = (req, ownerId) =>
   req.user?._id?.toString() === ownerId?.toString() ||
@@ -56,7 +55,8 @@ const updateProfile = async (req, res) => {
       'name', 'bio', 'age', 'dateOfBirth', 'educationLevel',
       'institutionName', 'subject', 'experience',
       'address', 'city', 'state',
-      'linkedinUrl', 'profession',
+      'linkedinUrl', 'profession', 'isCurrentlyWorking',
+      'currentPosition', 'currentCompany', 'previousWork',
     ];
 
     const arrayFields = ['skills', 'qualifications', 'interests'];
@@ -64,7 +64,10 @@ const updateProfile = async (req, res) => {
     const updates = {};
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
-        updates[field] = req.body[field];
+        updates[field] =
+          field === 'isCurrentlyWorking'
+            ? req.body[field] === true || req.body[field] === 'true'
+            : req.body[field];
       }
     }
 
@@ -181,7 +184,7 @@ const followUser = async (req, res) => {
 // @route   GET /api/users/search?q=
 const searchUsers = async (req, res) => {
   try {
-    const { q, role, institution } = req.query;
+    const { q, role, institution, excludeFollowed } = req.query;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
@@ -190,6 +193,15 @@ const searchUsers = async (req, res) => {
       isActive: { $ne: false },
       isBlocked: { $ne: true },
     };
+
+    if (req.user) {
+      query._id = {
+        $nin:
+          excludeFollowed === 'true'
+            ? [req.user._id, ...(req.user.following || [])]
+            : [req.user._id],
+      };
+    }
 
     if (q) {
       query.$text = { $search: q };

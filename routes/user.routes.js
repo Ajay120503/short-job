@@ -27,7 +27,7 @@ router.post('/me/badges', authMiddleware, updateMyBadges);
 router.post('/request-verification', authMiddleware, uploadProfile.single('document'), requestVerification);
 
 // Public routes
-router.get('/search', searchUsers);
+router.get('/search', optionalAuth, searchUsers);
 router.get('/:id', optionalAuth, getUserProfile);
 router.get('/:id/posts', optionalAuth, getUserPosts);
 router.get('/:id/jobs', optionalAuth, getUserJobs);

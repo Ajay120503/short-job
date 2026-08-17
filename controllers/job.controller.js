@@ -10,8 +10,7 @@ const { getInitialModerationState } = require('../utils/adminSettings');
 const hasActiveBadge = (user, badgeType) =>
   (user.badges || []).some((badge) => badge.type === badgeType && badge.isActive !== false);
 
-const canApplyToJobs = (user) =>
-  Boolean(user) && !['school_member', 'college_member', 'university_member', 'coaching_member'].some((badge) => hasActiveBadge(user, badge));
+const canApplyToJobs = (user) => Boolean(user);
 
 const canViewJob = (job, user) => {
   if (!job.status || job.status === 'approved') return true;

@@ -17,6 +17,48 @@ const CONTENT_MODELS = {
 
 const getContentConfig = (type) => CONTENT_MODELS[type];
 
+const getContentTitle = (type, content) => {
+  if (type === 'job') return content.title || 'your job post';
+  if (type === 'story') return content.text ? 'your story' : 'your story';
+  return content.text ? `"${content.text.slice(0, 60)}${content.text.length > 60 ? '...' : ''}"` : 'your post';
+};
+
+const getContentLink = (type, content) => {
+  if (type === 'job') return `/jobs/${content._id}`;
+  if (type === 'post') return `/post/${content._id}`;
+  return '/feed';
+};
+
+const notifyModerationDecision = async ({ type, content, config, status, reason }) => {
+  const recipient = content[config.authorField];
+  const approved = status === 'approved';
+  const notification = await Notification.create({
+    recipient,
+    sender: null,
+    type: approved ? 'content_approved' : 'content_rejected',
+    message: approved
+      ? `Admin approved ${getContentTitle(type, content)}. It is now public.`
+      : `Admin rejected ${getContentTitle(type, content)}.${reason ? ` Reason: ${reason}` : ''}`,
+    link: getContentLink(type, content),
+  });
+
+  const io = getIO();
+  io.to(recipient.toString()).emit('notification', {
+    _id: notification._id,
+    type: notification.type,
+    message: notification.message,
+    link: notification.link,
+    isRead: false,
+    createdAt: notification.createdAt,
+  });
+
+  io.to(recipient.toString()).emit(approved ? 'content_approved' : 'content_rejected', {
+    type,
+    id: content._id,
+    reason,
+  });
+};
+
 const syncLinkedJobFeedPost = async (type, content, status, moderationMeta) => {
   if (type === 'job') {
     await Post.updateMany(
@@ -298,7 +340,14 @@ const getModerationQueue = async (req, res) => {
       types.map(async (itemType) => {
         const config = CONTENT_MODELS[itemType];
         const query = itemType === 'post'
-          ? { status: 'pending_review', type: { $ne: 'job' } }
+          ? {
+              status: 'pending_review',
+              $or: [
+                { type: { $ne: 'job' } },
+                { jobPost: null },
+                { jobPost: { $exists: false } },
+              ],
+            }
           : { status: 'pending_review' };
         const docs = await config.Model.find(query)
           .populate(config.populate, 'name email profilePic badges category institutionName openToOpportunities')
@@ -371,10 +420,11 @@ const approveContent = async (req, res) => {
     try {
       const settings = await readAdminSettings();
       if (settings.notifyCreators) {
-        const io = getIO();
-        io.to(`user_${content[config.authorField]}`).emit('content_approved', {
+        await notifyModerationDecision({
           type,
-          id: content._id,
+          content,
+          config,
+          status: 'approved',
         });
       }
     } catch (socketErr) {}
@@ -422,10 +472,11 @@ const rejectContent = async (req, res) => {
     // Notify content creator
     try {
       if (settings.notifyCreators) {
-        const io = getIO();
-        io.to(`user_${content[config.authorField]}`).emit('content_rejected', {
+        await notifyModerationDecision({
           type,
-          id: content._id,
+          content,
+          config,
+          status: 'rejected',
           reason: body.notes,
         });
       }

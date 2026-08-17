@@ -150,6 +150,10 @@ const userSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    isCurrentlyWorking: { type: Boolean, default: false },
+    currentPosition: { type: String, trim: true, default: '' },
+    currentCompany: { type: String, trim: true, default: '' },
+    previousWork: { type: String, trim: true, default: '' },
     interests: [{ type: String, trim: true }],
     followers: [
       {

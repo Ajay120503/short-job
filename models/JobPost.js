@@ -9,7 +9,7 @@ const jobPostSchema = new mongoose.Schema(
     },
     institutionName: {
       type: String,
-      required: [true, 'Institution name is required'],
+      required: [true, 'Organization name is required'],
       trim: true,
     },
     institutionLogo: {
