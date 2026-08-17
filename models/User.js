@@ -64,7 +64,9 @@ const userSchema = new mongoose.Schema(
           // Skills / domain
           'stem_expert', 'arts_expert', 'sports_coach', 'counselor',
           // Trust
-          'verified_institution', 'top_contributor', 'email_verified', 'phone_verified'
+          'verified_institution', 'top_contributor', 'email_verified', 'phone_verified',
+          // Platform
+        'platform owner', 'platform_owner'
         ]
       },
       grantedAt: { type: Date, default: Date.now },
@@ -73,7 +75,7 @@ const userSchema = new mongoose.Schema(
     }],
     category: {
       type: String,
-      enum: ['student', 'school', 'college'],
+      enum: ['student', 'school', 'college', 'platform owner', 'platform_owner'],
       default: 'student',
     },
     profilePic: {
