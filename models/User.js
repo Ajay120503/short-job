@@ -154,6 +154,8 @@ const userSchema = new mongoose.Schema(
     currentPosition: { type: String, trim: true, default: '' },
     currentCompany: { type: String, trim: true, default: '' },
     previousWork: { type: String, trim: true, default: '' },
+    lastActiveAt: { type: Date },
+    activeDays: [{ type: String }],
     interests: [{ type: String, trim: true }],
     followers: [
       {

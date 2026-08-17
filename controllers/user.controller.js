@@ -185,6 +185,10 @@ const followUser = async (req, res) => {
 const searchUsers = async (req, res) => {
   try {
     const { q, role, institution, excludeFollowed } = req.query;
+    const searchTerm = q?.trim();
+    const normalizedSearch = searchTerm?.toLowerCase();
+    const isAdminSearch = ['admin', 'admins', 'administrator', 'super admin', 'superadmin']
+      .includes(normalizedSearch);
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
@@ -203,11 +207,13 @@ const searchUsers = async (req, res) => {
       };
     }
 
-    if (q) {
-      query.$text = { $search: q };
+    if (isAdminSearch || role === 'admin') {
+      query.$or = [{ isAdmin: true }, { isSuperAdmin: true }];
+    } else if (searchTerm) {
+      query.$text = { $search: searchTerm };
     }
 
-    if (role) {
+    if (role && role !== 'admin') {
       query.$or = [
         { role },
         { category: role },

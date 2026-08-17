@@ -35,6 +35,27 @@ const attachUserFromToken = async (req, token) => {
   }
 
   req.user = user;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const recentDays = (user.activeDays || []).filter((day) => {
+    const dayTime = new Date(`${day}T00:00:00.000Z`).getTime();
+    return !Number.isNaN(dayTime) && Date.now() - dayTime <= 8 * 24 * 60 * 60 * 1000;
+  });
+
+  const shouldTouchActivity =
+    !user.lastActiveAt ||
+    Date.now() - new Date(user.lastActiveAt).getTime() > 5 * 60 * 1000 ||
+    !recentDays.includes(today);
+
+  if (shouldTouchActivity) {
+    const activeDays = [...new Set([...recentDays, today])].slice(-8);
+    user.lastActiveAt = new Date();
+    user.activeDays = activeDays;
+    User.updateOne(
+      { _id: user._id },
+      { lastActiveAt: user.lastActiveAt, activeDays }
+    ).catch(() => {});
+  }
 };
 
 const authMiddleware = async (req, res, next) => {
