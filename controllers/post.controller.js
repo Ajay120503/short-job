@@ -6,6 +6,8 @@ const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upl
 const { runFakeDetectionRuleOnly } = require('../utils/fakeDetectionRuleOnly');
 const { getInitialModerationState } = require('../utils/adminSettings');
 
+const USER_SIGNAL_SELECT = 'name profilePic badges role category institutionName institutionPic openToOpportunities isAdmin isSuperAdmin lastActiveAt activeDays followers';
+
 const hasActiveBadge = (user, badgeType) =>
   (user.badges || []).some((badge) => badge.type === badgeType && badge.isActive !== false);
 
@@ -55,13 +57,13 @@ const getFeed = async (req, res) => {
     }
 
     const posts = await Post.find(query)
-      .populate('author', 'name profilePic badges category institutionName profilePic openToOpportunities')
+      .populate('author', USER_SIGNAL_SELECT)
       .populate({
         path: 'jobPost',
-        select: 'title institutionName institutionLogo roleType isPaid stipend currency location deadline description image skillsRequired applicants',
+        select: 'title institutionName institutionLogo roleType isPaid stipend currency location deadline description image skillsRequired applicants postedBy',
         populate: {
           path: 'postedBy',
-          select: 'name profilePic institutionName openToOpportunities',
+          select: USER_SIGNAL_SELECT,
         },
       })
       .populate({
@@ -69,7 +71,7 @@ const getFeed = async (req, res) => {
         select: 'author text likes createdAt',
         populate: {
           path: 'author',
-          select: 'name profilePic openToOpportunities',
+          select: USER_SIGNAL_SELECT,
         },
       })
       .sort({ createdAt: -1 })
@@ -133,7 +135,7 @@ const createPost = async (req, res) => {
 
     const post = await Post.create(postData);
     const populatedPost = await Post.findById(post._id)
-      .populate('author', 'name profilePic badges category institutionName openToOpportunities');
+      .populate('author', USER_SIGNAL_SELECT);
 
     // Auto-run fake detection after 60 seconds (using cron job instead of Bull/Redis)
     // The cron job will handle the 1-minute admin window
@@ -219,13 +221,13 @@ const updatePost = async (req, res) => {
     await post.save();
 
     const populatedPost = await Post.findById(post._id)
-      .populate('author', 'name profilePic badges category institutionName openToOpportunities')
+      .populate('author', USER_SIGNAL_SELECT)
       .populate({
         path: 'jobPost',
-        select: 'title institutionName institutionLogo roleType isPaid stipend currency location deadline description image skillsRequired applicants',
+        select: 'title institutionName institutionLogo roleType isPaid stipend currency location deadline description image skillsRequired applicants postedBy',
         populate: {
           path: 'postedBy',
-          select: 'name profilePic institutionName openToOpportunities',
+          select: USER_SIGNAL_SELECT,
         },
       })
       .populate({
@@ -233,7 +235,7 @@ const updatePost = async (req, res) => {
         select: 'author text likes createdAt',
         populate: {
           path: 'author',
-          select: 'name profilePic openToOpportunities',
+          select: USER_SIGNAL_SELECT,
         },
       });
 
@@ -377,13 +379,13 @@ const getSavedPosts = async (req, res) => {
         { author: req.user._id },
       ],
     })
-      .populate('author', 'name profilePic badges category institutionName openToOpportunities')
+      .populate('author', USER_SIGNAL_SELECT)
       .populate({
         path: 'jobPost',
-        select: 'title institutionName institutionLogo roleType isPaid stipend currency location deadline description image skillsRequired applicants',
+        select: 'title institutionName institutionLogo roleType isPaid stipend currency location deadline description image skillsRequired applicants postedBy',
         populate: {
           path: 'postedBy',
-          select: 'name profilePic institutionName openToOpportunities',
+          select: USER_SIGNAL_SELECT,
         },
       })
       .populate({
@@ -391,7 +393,7 @@ const getSavedPosts = async (req, res) => {
         select: 'author text likes createdAt',
         populate: {
           path: 'author',
-          select: 'name profilePic openToOpportunities',
+          select: USER_SIGNAL_SELECT,
         },
       })
       .sort({ createdAt: -1 });
@@ -408,20 +410,20 @@ const getSavedPosts = async (req, res) => {
 const getPost = async (req, res) => {
   try {
     const post = await Post.findById(req.params.id)
-      .populate('author', 'name profilePic badges category institutionName openToOpportunities')
+      .populate('author', USER_SIGNAL_SELECT)
       .populate({
         path: 'jobPost',
-        select: 'title institutionName institutionLogo roleType isPaid stipend currency location deadline description image skillsRequired applicants',
+        select: 'title institutionName institutionLogo roleType isPaid stipend currency location deadline description image skillsRequired applicants postedBy',
         populate: {
           path: 'postedBy',
-          select: 'name profilePic institutionName openToOpportunities',
+          select: USER_SIGNAL_SELECT,
         },
       })
       .populate({
         path: 'comments',
         populate: {
           path: 'author',
-          select: 'name profilePic openToOpportunities',
+          select: USER_SIGNAL_SELECT,
         },
       });
 
@@ -449,7 +451,7 @@ const getNoticeboardPosts = async (req, res) => {
       status: 'approved',
       noticeboardExpiresAt: { $gt: new Date() },
     })
-      .populate('author', 'name profilePic badges category institutionName institutionPic openToOpportunities')
+      .populate('author', USER_SIGNAL_SELECT)
       .sort({ createdAt: -1 })
       .limit(5);
 
