@@ -118,7 +118,7 @@ const createJob = async (req, res) => {
 
     // Upload job image if provided
     if (req.file) {
-      const result = await uploadToCloudinary(req.file, 'educonnect/job-images');
+      const result = await uploadToCloudinary(req.file, 'ShortJob/job-images');
       jobData.image = {
         url: result.secure_url,
         publicId: result.public_id,
@@ -229,7 +229,7 @@ const updateJob = async (req, res) => {
           console.error('Failed to delete old job image:', imgErr.message);
         }
       }
-      const result = await uploadToCloudinary(req.file, 'educonnect/job-images');
+      const result = await uploadToCloudinary(req.file, 'ShortJob/job-images');
       job.image = {
         url: result.secure_url,
         publicId: result.public_id,
@@ -325,7 +325,7 @@ const applyToJob = async (req, res) => {
 
     // Upload cover letter PDF if provided
     if (req.file) {
-      const result = await uploadToCloudinary(req.file, 'educonnect/resumes');
+      const result = await uploadToCloudinary(req.file, 'ShortJob/resumes');
       applicationData.coverLetterFile = {
         url: result.secure_url,
         publicId: result.public_id,

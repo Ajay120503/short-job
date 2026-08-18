@@ -88,7 +88,7 @@ const updateProfile = async (req, res) => {
       if (req.user.profilePic?.publicId) {
         await deleteFromCloudinary(req.user.profilePic.publicId);
       }
-      const result = await uploadToCloudinary(req.files.profilePic[0], 'educonnect/profile-pics');
+      const result = await uploadToCloudinary(req.files.profilePic[0], 'ShortJob/profile-pics');
       updates.profilePic = { url: result.secure_url, publicId: result.public_id };
     }
 
@@ -97,13 +97,13 @@ const updateProfile = async (req, res) => {
       if (req.user.institutionPic?.publicId) {
         await deleteFromCloudinary(req.user.institutionPic.publicId);
       }
-      const result = await uploadToCloudinary(req.files.institutionPic[0], 'educonnect/institution-pics');
+      const result = await uploadToCloudinary(req.files.institutionPic[0], 'ShortJob/institution-pics');
       updates.institutionPic = { url: result.secure_url, publicId: result.public_id };
     }
 
     // Handle resume upload
     if (req.files?.resume?.[0]) {
-      const result = await uploadToCloudinary(req.files.resume[0], 'educonnect/resumes');
+      const result = await uploadToCloudinary(req.files.resume[0], 'ShortJob/resumes');
       updates.resumeUrl = result.secure_url;
     }
 
@@ -381,7 +381,7 @@ const requestVerification = async (req, res) => {
       return res.status(400).json({ message: 'Verification document is required.' });
     }
 
-    const result = await uploadToCloudinary(req.file, 'educonnect/verification-docs');
+    const result = await uploadToCloudinary(req.file, 'ShortJob/verification-docs');
     req.user.verificationDocuments.push({
       url: result.secure_url,
       publicId: result.public_id,

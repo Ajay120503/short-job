@@ -22,7 +22,7 @@ const createStory = async (req, res) => {
     };
 
     if (req.file) {
-      const result = await uploadToCloudinary(req.file, 'educonnect/stories');
+      const result = await uploadToCloudinary(req.file, 'ShortJob/stories');
       storyData.image = {
         url: result.secure_url,
         publicId: result.public_id,

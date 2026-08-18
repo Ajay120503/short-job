@@ -228,8 +228,8 @@ const sendMessage = async (req, res) => {
     // Handle file upload
     if (req.file) {
       const folder = req.file.mimetype.startsWith('image')
-        ? 'educonnect/chat-images'
-        : 'educonnect/chat-files';
+        ? 'ShortJob/chat-images'
+        : 'ShortJob/chat-files';
 
       const result = await uploadToCloudinary(req.file, folder);
       messageData.fileUrl = result.secure_url;

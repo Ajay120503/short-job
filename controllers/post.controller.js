@@ -125,7 +125,7 @@ const createPost = async (req, res) => {
     // Upload images to Cloudinary
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
-        const result = await uploadToCloudinary(file, 'educonnect/post-images');
+        const result = await uploadToCloudinary(file, 'ShortJob/post-images');
         postData.images.push({
           url: result.secure_url,
           publicId: result.public_id,
@@ -210,7 +210,7 @@ const updatePost = async (req, res) => {
       }
       const filesToUpload = req.files.slice(0, remainingSlots);
       for (const file of filesToUpload) {
-        const result = await uploadToCloudinary(file, 'educonnect/post-images');
+        const result = await uploadToCloudinary(file, 'ShortJob/post-images');
         post.images.push({
           url: result.secure_url,
           publicId: result.public_id,

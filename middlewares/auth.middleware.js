@@ -74,7 +74,7 @@ const authMiddleware = async (req, res, next) => {
         error: 'account_suspended',
         message: error.message,
         reason: error.reason,
-        contact: 'support@educonnect.in',
+        contact: 'support@ShortJob.in',
       });
     }
     if (error.statusCode) {

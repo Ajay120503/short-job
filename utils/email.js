@@ -17,19 +17,19 @@ const sendVerificationEmail = async (email, name, token) => {
   const verificationUrl = `${process.env.CLIENT_URL}/verify-email/${token}`;
 
   await transporter.sendMail({
-    from: `"EduConnect" <${process.env.EMAIL_USER}>`,
+    from: `"ShortJob" <${process.env.EMAIL_USER}>`,
     to: email,
-    subject: 'Verify Your Email - EduConnect',
+    subject: 'Verify Your Email - ShortJob',
     html: `
       <div style="max-width: 600px; margin: auto; padding: 20px; font-family: 'Inter', Arial, sans-serif; background-color: #F0F4FF; border-radius: 12px;">
         <div style="text-align: center; padding: 20px;">
-          <h1 style="color: #4F46E5; font-family: 'Poppins', sans-serif;">EduConnect</h1>
+          <h1 style="color: #4F46E5; font-family: 'Poppins', sans-serif;">ShortJob</h1>
           <p style="color: #1E293B; font-size: 16px;">Where Academic Careers Begin</p>
         </div>
         <div style="background: white; padding: 30px; border-radius: 8px; text-align: center;">
           <h2 style="color: #1E293B;">Welcome, ${name}! 🎓</h2>
           <p style="color: #475569; font-size: 15px; line-height: 1.6;">
-            Thank you for joining EduConnect. Please verify your email address to get started.
+            Thank you for joining ShortJob. Please verify your email address to get started.
           </p>
           <a href="${verificationUrl}" 
              style="display: inline-block; margin: 20px 0; padding: 14px 36px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">
@@ -46,13 +46,13 @@ const sendVerificationEmail = async (email, name, token) => {
 
 const sendPasswordResetOTP = async (email, otp) => {
   await transporter.sendMail({
-    from: `"EduConnect" <${process.env.EMAIL_USER}>`,
+    from: `"ShortJob" <${process.env.EMAIL_USER}>`,
     to: email,
-    subject: 'Password Reset OTP - EduConnect',
+    subject: 'Password Reset OTP - ShortJob',
     html: `
       <div style="max-width: 600px; margin: auto; padding: 20px; font-family: 'Inter', Arial, sans-serif; background-color: #F0F4FF; border-radius: 12px;">
         <div style="text-align: center; padding: 20px;">
-          <h1 style="color: #4F46E5; font-family: 'Poppins', sans-serif;">EduConnect</h1>
+          <h1 style="color: #4F46E5; font-family: 'Poppins', sans-serif;">ShortJob</h1>
         </div>
         <div style="background: white; padding: 30px; border-radius: 8px; text-align: center;">
           <h2 style="color: #1E293B;">Reset Your Password</h2>
@@ -73,13 +73,13 @@ const sendPasswordResetOTP = async (email, otp) => {
 
 const sendRegistrationOTP = async (email, name, otp) => {
   await transporter.sendMail({
-    from: `"EduConnect" <${process.env.EMAIL_USER}>`,
+    from: `"ShortJob" <${process.env.EMAIL_USER}>`,
     to: email,
-    subject: 'Your EduConnect Verification Code',
+    subject: 'Your ShortJob Verification Code',
     html: `
       <div style="max-width: 600px; margin: auto; padding: 20px; font-family: 'Inter', Arial, sans-serif; background-color: #F0F4FF; border-radius: 12px;">
         <div style="text-align: center; padding: 20px;">
-          <h1 style="color: #4F46E5; font-family: 'Poppins', sans-serif;">EduConnect</h1>
+          <h1 style="color: #4F46E5; font-family: 'Poppins', sans-serif;">ShortJob</h1>
         </div>
         <div style="background: white; padding: 30px; border-radius: 8px; text-align: center;">
           <h2 style="color: #1E293B;">Welcome, ${name}!</h2>

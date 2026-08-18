@@ -178,7 +178,7 @@ app.use(cookieParser());
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,
-    message: 'EduConnect API is running',
+    message: 'ShortJob API is running',
     timestamp: new Date().toISOString(),
   });
 });
