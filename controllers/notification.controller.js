@@ -9,7 +9,7 @@ const getNotifications = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const notifications = await Notification.find({ recipient: req.user._id })
-      .populate('sender', 'name profilePic role openToOpportunities')
+      .populate('sender', 'name profilePic role openToOpportunities profileThemeVariant')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);

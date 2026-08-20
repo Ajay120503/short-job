@@ -21,14 +21,23 @@ const canUseSpecialProfileStyle = (user) => {
   if (!user) return false;
   const activeDaysCount = Array.isArray(user.activeDays) ? user.activeDays.length : 0;
   const followerCount = Array.isArray(user.followers) ? user.followers.length : 0;
+
+  let recentlyActive = false;
+  if (user.lastActiveAt) {
+    const lastActive = new Date(user.lastActiveAt).getTime();
+    if (!Number.isNaN(lastActive)) {
+      recentlyActive = Date.now() - lastActive <= 7 * 24 * 60 * 60 * 1000;
+    }
+  }
+
   return Boolean(
     user.isAdmin ||
       user.isSuperAdmin ||
-      user.isVerified ||
       user.verifiedStatus === 'top_contributor' ||
       hasActiveBadge(user, 'top_contributor') ||
       followerCount >= 5 ||
-      activeDaysCount >= 5
+      activeDaysCount >= 5 ||
+      recentlyActive
   );
 };
 
@@ -80,8 +89,16 @@ const updateProfile = async (req, res) => {
     const updates = {};
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
-        if (field === 'profileThemeVariant' && !canUseSpecialProfileStyle(req.user)) {
-          continue;
+        if (field === 'profileThemeVariant') {
+          if (!canUseSpecialProfileStyle(req.user)) {
+            return res.status(403).json({
+              message: 'Your account does not have permission to customize the profile color yet.',
+            });
+          }
+          const allowedVariants = ['teal', 'coral', 'emerald', 'amber', 'indigo', 'sky', 'deep-teal', 'rose', 'slate', 'violet', 'pink'];
+          if (!allowedVariants.includes(req.body[field])) {
+            return res.status(400).json({ message: 'Invalid profile theme variant.' });
+          }
         }
         updates[field] =
           field === 'isCurrentlyWorking'

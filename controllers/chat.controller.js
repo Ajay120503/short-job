@@ -49,7 +49,7 @@ const getConversations = async (req, res) => {
     const conversations = await Conversation.find({
       participants: req.user._id,
     })
-      .populate('participants', 'name profilePic role openToOpportunities')
+      .populate('participants', 'name profilePic role openToOpportunities profileThemeVariant')
       .populate('lastMessageSender', 'name')
       .sort({ updatedAt: -1 });
 
@@ -101,7 +101,7 @@ const getMessages = async (req, res) => {
     }
 
     const messages = await Message.find({ conversation: id })
-      .populate('sender', 'name profilePic openToOpportunities')
+      .populate('sender', 'name profilePic openToOpportunities profileThemeVariant')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -159,7 +159,7 @@ const createConversation = async (req, res) => {
         ],
       })
         .sort({ updatedAt: -1 })
-        .populate('participants', 'name profilePic role openToOpportunities');
+        .populate('participants', 'name profilePic role openToOpportunities profileThemeVariant');
 
       const existingConversation = existingConversations.find((item) =>
         hasExactlyParticipants(item, participantIds)
@@ -184,7 +184,7 @@ const createConversation = async (req, res) => {
       });
 
       return Conversation.findById(created._id)
-        .populate('participants', 'name profilePic role openToOpportunities');
+        .populate('participants', 'name profilePic role openToOpportunities profileThemeVariant');
     });
 
     res.status(201).json({ success: true, conversation });
@@ -257,7 +257,7 @@ const sendMessage = async (req, res) => {
     await conversation.save();
 
     const populatedMessage = await Message.findById(message._id)
-      .populate('sender', 'name profilePic openToOpportunities');
+      .populate('sender', 'name profilePic openToOpportunities profileThemeVariant');
 
     // Emit socket events
     try {
@@ -414,7 +414,7 @@ const updateMessage = async (req, res) => {
     await message.save();
 
     const populatedMessage = await Message.findById(message._id)
-      .populate('sender', 'name profilePic openToOpportunities');
+      .populate('sender', 'name profilePic openToOpportunities profileThemeVariant');
 
     // Emit socket event for real-time update
     try {
