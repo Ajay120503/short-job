@@ -2,7 +2,7 @@ const Story = require('../models/Story');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 const { getInitialModerationState } = require('../utils/adminSettings');
 
-const USER_SIGNAL_SELECT = 'name profilePic badges role category institutionName institutionPic openToOpportunities isAdmin isSuperAdmin lastActiveAt activeDays followers';
+const USER_SIGNAL_SELECT = 'name profilePic badges role category institutionName institutionPic openToOpportunities isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant';
 
 // @desc    F13 — Create a story
 // @route   POST /api/stories

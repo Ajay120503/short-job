@@ -8,6 +8,7 @@ const {
   getAdminSettings: readAdminSettings,
   updateAdminSettings: saveAdminSettings,
 } = require('../utils/adminSettings');
+const { runFakeDetectionRuleOnly } = require('../utils/fakeDetectionRuleOnly');
 
 const CONTENT_MODELS = {
   post: { Model: Post, authorField: 'author', populate: 'author' },
@@ -350,7 +351,7 @@ const getModerationQueue = async (req, res) => {
             }
           : { status: 'pending_review' };
         const docs = await config.Model.find(query)
-          .populate(config.populate, 'name email profilePic badges category institutionName openToOpportunities')
+          .populate(config.populate, 'name email profilePic badges category institutionName openToOpportunities isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant')
           .sort({ createdAt: 1 });
         return docs.map((doc) => ({ ...doc.toObject(), contentType: itemType }));
       })
@@ -375,7 +376,7 @@ const getContentDetail = async (req, res) => {
     }
 
     const content = await config.Model.findById(req.params.id)
-      .populate(config.populate, 'name email profilePic badges category institutionName openToOpportunities');
+      .populate(config.populate, 'name email profilePic badges category institutionName openToOpportunities isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
 
     if (!content) {
       return res.status(404).json({ message: 'Content not found.' });
@@ -489,6 +490,56 @@ const rejectContent = async (req, res) => {
   }
 };
 
+// @desc    Run rule-based moderation on one content item (admin)
+// @route   PUT /api/admin/content/:type/:id/run-check
+const runContentRuleCheck = async (req, res) => {
+  try {
+    const { type, id } = req.params;
+    const config = getContentConfig(type);
+    if (!config) {
+      return res.status(400).json({ message: 'Invalid content type.' });
+    }
+
+    const content = await config.Model.findById(id);
+    if (!content) {
+      return res.status(404).json({ message: 'Content not found.' });
+    }
+
+    const result = await runFakeDetectionRuleOnly(content, type);
+    content.status = result.approved ? 'approved' : 'rejected';
+    content.moderationMeta = {
+      ...(content.moderationMeta?.toObject?.() || content.moderationMeta || {}),
+      reviewedBy: req.user._id,
+      reviewedAt: new Date(),
+      reviewMethod: result.approved ? 'auto_approved' : 'auto_rejected',
+      reviewNotes: result.reason,
+      autoScore: result.score,
+      autoFlags: result.flags,
+    };
+
+    await content.save();
+    await syncLinkedJobFeedPost(type, content, content.status, content.moderationMeta);
+
+    const settings = await readAdminSettings();
+    if (settings.notifyCreators) {
+      try {
+        await notifyModerationDecision({
+          type,
+          content,
+          config,
+          status: content.status,
+          reason: result.reason,
+        });
+      } catch (notifyErr) {}
+    }
+
+    res.json({ success: true, content, moderationResult: result });
+  } catch (error) {
+    console.error('Run content rule check error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
 // @desc    Get admin settings
 // @route   GET /api/admin/settings
 const getAdminSettings = async (req, res) => {
@@ -524,6 +575,7 @@ module.exports = {
   revokeBadge,
   getModerationQueue,
   getContentDetail,
+  runContentRuleCheck,
   approveContent,
   rejectContent,
   getAdminSettings,

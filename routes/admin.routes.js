@@ -11,6 +11,7 @@ const {
   revokeBadge,
   getModerationQueue,
   getContentDetail,
+  runContentRuleCheck,
   approveContent,
   rejectContent,
   getAdminSettings,
@@ -42,6 +43,7 @@ router.get('/settings', authMiddleware, adminMiddleware, getAdminSettings);
 router.put('/settings', authMiddleware, adminMiddleware, updateAdminSettings);
 router.get('/queue', authMiddleware, adminMiddleware, getModerationQueue);
 router.get('/content/:type/:id', authMiddleware, adminMiddleware, getContentDetail);
+router.put('/content/:type/:id/run-check', authMiddleware, adminMiddleware, runContentRuleCheck);
 router.put('/content/:type/:id/approve', authMiddleware, adminMiddleware, approveContent);
 router.put('/content/:type/:id/reject', authMiddleware, adminMiddleware, rejectContent);
 router.put('/queue/:type/:id/approve', authMiddleware, adminMiddleware, approveContent);

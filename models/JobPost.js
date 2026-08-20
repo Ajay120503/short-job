@@ -110,7 +110,7 @@ const jobPostSchema = new mongoose.Schema(
       },
       reviewNotes: String,
       autoScore: Number,
-      autoFlags: [String],
+      autoFlags: [mongoose.Schema.Types.Mixed],
       adminWindowExpiredAt: Date,
     },
   },

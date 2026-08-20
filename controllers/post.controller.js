@@ -6,7 +6,7 @@ const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upl
 const { runFakeDetectionRuleOnly } = require('../utils/fakeDetectionRuleOnly');
 const { getInitialModerationState } = require('../utils/adminSettings');
 
-const USER_SIGNAL_SELECT = 'name profilePic badges role category institutionName institutionPic openToOpportunities isAdmin isSuperAdmin lastActiveAt activeDays followers';
+const USER_SIGNAL_SELECT = 'name profilePic badges role category institutionName institutionPic openToOpportunities isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant';
 
 const hasActiveBadge = (user, badgeType) =>
   (user.badges || []).some((badge) => badge.type === badgeType && badge.isActive !== false);

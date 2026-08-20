@@ -17,6 +17,21 @@ const hasActiveBadge = (user, badgeType) =>
 
 const canUseOpportunityStatus = (user) => Boolean(user);
 
+const canUseSpecialProfileStyle = (user) => {
+  if (!user) return false;
+  const activeDaysCount = Array.isArray(user.activeDays) ? user.activeDays.length : 0;
+  const followerCount = Array.isArray(user.followers) ? user.followers.length : 0;
+  return Boolean(
+    user.isAdmin ||
+      user.isSuperAdmin ||
+      user.isVerified ||
+      user.verifiedStatus === 'top_contributor' ||
+      hasActiveBadge(user, 'top_contributor') ||
+      followerCount >= 5 ||
+      activeDaysCount >= 5
+  );
+};
+
 const isOwnerOrAdmin = (req, ownerId) =>
   req.user?._id?.toString() === ownerId?.toString() ||
   req.user?.isAdmin ||
@@ -57,6 +72,7 @@ const updateProfile = async (req, res) => {
       'address', 'city', 'state',
       'linkedinUrl', 'profession', 'isCurrentlyWorking',
       'currentPosition', 'currentCompany', 'previousWork',
+      'profileThemeVariant',
     ];
 
     const arrayFields = ['skills', 'qualifications', 'interests'];
@@ -64,6 +80,9 @@ const updateProfile = async (req, res) => {
     const updates = {};
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
+        if (field === 'profileThemeVariant' && !canUseSpecialProfileStyle(req.user)) {
+          continue;
+        }
         updates[field] =
           field === 'isCurrentlyWorking'
             ? req.body[field] === true || req.body[field] === 'true'
@@ -263,7 +282,7 @@ const getUserPosts = async (req, res) => {
     }
 
     const posts = await Post.find(query)
-      .populate('author', 'name profilePic role category institutionName openToOpportunities badges')
+      .populate('author', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant')
       .populate('jobPost', 'title institutionName roleType isPaid stipend currency location deadline status')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -298,7 +317,7 @@ const getUserJobs = async (req, res) => {
     }
 
     const jobs = await JobPost.find(query)
-      .populate('postedBy', 'name profilePic role category openToOpportunities badges')
+      .populate('postedBy', 'name profilePic role category openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant')
       .sort({ createdAt: -1 });
 
     res.json({ success: true, jobs });
@@ -313,7 +332,7 @@ const getUserJobs = async (req, res) => {
 const getFollowers = async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
-      .populate('followers', 'name profilePic role category institutionName openToOpportunities');
+      .populate('followers', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
 
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
@@ -331,7 +350,7 @@ const getFollowers = async (req, res) => {
 const getFollowing = async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
-      .populate('following', 'name profilePic role category institutionName openToOpportunities');
+      .populate('following', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
 
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });

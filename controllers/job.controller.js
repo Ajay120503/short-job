@@ -58,7 +58,7 @@ const getJobs = async (req, res) => {
       : { ...filters, status: 'approved' };
 
     const jobs = await JobPost.find(query)
-      .populate('postedBy', 'name profilePic role category institutionName institutionPic openToOpportunities')
+      .populate('postedBy', 'name profilePic role category institutionName institutionPic openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -127,7 +127,7 @@ const createJob = async (req, res) => {
 
     const job = await JobPost.create(jobData);
     const populatedJob = await JobPost.findById(job._id)
-      .populate('postedBy', 'name profilePic role category institutionName openToOpportunities');
+      .populate('postedBy', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
 
     // Create a feed post linked to this job (uses Post.jobPost field)
     await Post.create({
@@ -172,8 +172,8 @@ const createJob = async (req, res) => {
 const getJob = async (req, res) => {
   try {
     const job = await JobPost.findById(req.params.id)
-      .populate('postedBy', 'name profilePic role category institutionName profilePic openToOpportunities')
-      .populate('applicants', 'name profilePic skills openToOpportunities');
+      .populate('postedBy', 'name profilePic role category institutionName profilePic openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant')
+      .populate('applicants', 'name profilePic skills openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
 
     if (!job) {
       return res.status(404).json({ message: 'Job not found.' });
@@ -387,7 +387,7 @@ const getApplicants = async (req, res) => {
     const applications = await Application.find(query)
       .populate(
         'applicant',
-        'name profilePic skills qualifications email educationLevel city state bio age experience subject profession institutionName linkedinUrl resumeUrl interests openToOpportunities'
+        'name profilePic skills qualifications email educationLevel city state bio age experience subject profession institutionName linkedinUrl resumeUrl interests openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant'
       )
       .sort({ createdAt: -1 });
 
@@ -466,7 +466,7 @@ const getMyApplications = async (req, res) => {
         select: 'title institutionName location roleType isPaid stipend deadline',
         populate: {
           path: 'postedBy',
-          select: 'name profilePic openToOpportunities',
+          select: 'name profilePic openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant',
         },
       })
       .sort({ createdAt: -1 });
@@ -483,7 +483,7 @@ const getMyApplications = async (req, res) => {
 const getMyJobs = async (req, res) => {
   try {
     const jobs = await JobPost.find({ postedBy: req.user._id })
-      .populate('postedBy', 'name profilePic role category institutionName openToOpportunities')
+      .populate('postedBy', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant')
       .sort({ createdAt: -1 });
 
     // Get application counts for each job
@@ -514,7 +514,7 @@ const getMatchedJobs = async (req, res) => {
     }
 
     const jobs = await JobPost.find({ isActive: true, status: 'approved' })
-      .populate('postedBy', 'name profilePic role category institutionName institutionPic openToOpportunities');
+      .populate('postedBy', 'name profilePic role category institutionName institutionPic openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
 
     const studentSkills = (student.skills || []).map(s => s.toLowerCase().trim());
     const studentQualifications = (student.qualifications || []).map(q => q.toLowerCase().trim());

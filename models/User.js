@@ -186,6 +186,11 @@ const userSchema = new mongoose.Schema(
       uploadedAt: { type: Date, default: Date.now },
     }],
     openToOpportunities: { type: Boolean, default: false },
+    profileThemeVariant: {
+      type: String,
+      enum: ['teal', 'coral', 'emerald', 'amber', 'indigo'],
+      default: 'teal',
+    },
     isAdmin: { type: Boolean, default: false },
     isSuperAdmin: { type: Boolean, default: false },
     isBlocked: { type: Boolean, default: false },
