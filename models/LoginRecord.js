@@ -24,7 +24,7 @@ const loginRecordSchema = new mongoose.Schema({
     ip: String,
   },
   auditTokenId: { type: String, index: true, unique: true, sparse: true },
-  loginAt: { type: Date, default: Date.now, index: true },
+  loginAt: { type: Date, default: Date.now },
 });
 
 loginRecordSchema.index({ user: 1, loginAt: -1 });
