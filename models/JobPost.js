@@ -30,7 +30,7 @@ const jobPostSchema = new mongoose.Schema(
     roleType: {
       type: String,
       enum: ['teacher', 'professor', 'hod', 'principal', 'intern', 'volunteer', 'assistant', 'research', 'other'],
-      default: 'teacher',
+      default: 'other',
     },
     isPaid: {
       type: Boolean,

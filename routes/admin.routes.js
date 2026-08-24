@@ -9,6 +9,8 @@ const {
   deleteUser,
   grantBadge,
   revokeBadge,
+  makeAdmin,
+  removeAdmin,
   getModerationQueue,
   getContentDetail,
   runContentRuleCheck,
@@ -31,6 +33,8 @@ router.put('/users/:id/unblock', authMiddleware, requireSuperAdmin, unblockUser)
 router.put('/users/:id/notes', authMiddleware, requireAdmin, updateUserNotes);
 router.put('/users/:id/grant-badge', authMiddleware, requireSuperAdmin, grantBadge);
 router.put('/users/:id/revoke-badge', authMiddleware, requireSuperAdmin, revokeBadge);
+router.put('/users/:id/make-admin', authMiddleware, requireSuperAdmin, makeAdmin);
+router.put('/users/:id/remove-admin', authMiddleware, requireSuperAdmin, removeAdmin);
 router.delete('/users/:id', authMiddleware, requireSuperAdmin, deleteUser);
 router.get('/settings', authMiddleware, requireAdmin, getAdminSettings);
 router.put('/settings', authMiddleware, requireSuperAdmin, updateAdminSettings);

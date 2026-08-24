@@ -64,30 +64,28 @@ const UNSAFE_TOPICS = [
 ];
 
 const EDUCATION_TERMS = [
-  'teacher',
-  'student',
-  'school',
-  'college',
-  'university',
-  'class',
+  'creator',
+  'member',
+  'organization',
+  'company',
+  'team',
+  'community',
   'course',
-  'subject',
+  'training',
   'skills',
   'qualification',
   'internship',
   'research',
   'project',
-  'education',
-  'academic',
-  'faculty',
-  'professor',
+  'career',
+  'professional',
+  'work',
   'mentor',
-  'training',
   'job',
   'role',
   'opportunity',
-  'campus',
-  'institution',
+  'hiring',
+  'business',
 ];
 
 const JOB_REQUIRED_FIELDS = ['title', 'description', 'deadline', 'contactEmail'];
@@ -234,7 +232,7 @@ const scoreCommonSignals = ({ rawText, text, type, content, flags }) => {
   }
 
   if (phraseHits(text, EDUCATION_TERMS).length === 0 && type !== 'story') {
-    score += addFlag(flags, 'weak_academic_relevance', 10, 'low');
+    score += addFlag(flags, 'weak_platform_relevance', 10, 'low');
   }
 
   if (content?.images?.length > 5) {

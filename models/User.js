@@ -56,7 +56,7 @@ const userSchema = new mongoose.Schema(
       type: {
         type: String,
         enum: [
-          // Academic identity
+          // Legacy identity
           'student', 'teacher', 'professor', 'principal', 'hod',
           'researcher', 'phd_scholar', 'lecturer',
           // Institution type
@@ -177,7 +177,7 @@ const userSchema = new mongoose.Schema(
     },
     verifiedStatus: {
       type: String,
-      enum: ['none', 'email', 'institution', 'top_contributor'],
+      enum: ['none', 'email', 'institution', 'top_contributor', 'platform_owner'],
       default: 'none',
     },
     verificationDocuments: [{

@@ -90,6 +90,12 @@ const syncUserTrustStatus = (user) => {
   user.isEmailVerified = activeTrustBadges.has('email_verified');
   user.isPhoneVerified = activeTrustBadges.has('phone_verified');
 
+  if (activeTrustBadges.has('platform_owner')) {
+    user.isVerified = true;
+    user.verifiedStatus = 'platform_owner';
+    return;
+  }
+
   if (activeTrustBadges.has('verified_institution')) {
     user.isVerified = true;
     user.verifiedStatus = 'institution';
@@ -137,6 +143,14 @@ const ensureCanMutateUser = async (req, targetUser, action) => {
 
   return { allowed: true };
 };
+
+const TRUST_BADGE_TYPES = [
+  'verified_institution',
+  'top_contributor',
+  'email_verified',
+  'phone_verified',
+  'platform_owner',
+];
 
 const respondIfDenied = (res, permission) => {
   if (permission.allowed) return false;
@@ -316,17 +330,8 @@ const grantBadge = async (req, res) => {
     const permission = await ensureCanMutateUser(req, user, 'grant badge to');
     if (respondIfDenied(res, permission)) return;
 
-    // Check if badge type is valid
-    const validBadges = [
-      'student', 'teacher', 'professor', 'principal', 'hod',
-      'researcher', 'phd_scholar', 'lecturer',
-      'school_member', 'college_member', 'university_member', 'coaching_member',
-      'stem_expert', 'arts_expert', 'sports_coach', 'counselor',
-      'verified_institution', 'top_contributor', 'email_verified', 'phone_verified'
-    ];
-
-    if (!validBadges.includes(badgeType)) {
-      return res.status(400).json({ message: 'Invalid badge type.' });
+    if (!TRUST_BADGE_TYPES.includes(badgeType)) {
+      return res.status(400).json({ message: 'Invalid trust badge type.' });
     }
 
     // Check if badge already granted
@@ -352,6 +357,50 @@ const grantBadge = async (req, res) => {
     res.json({ success: true, user });
   } catch (error) {
     console.error('Grant badge error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
+// @desc    Promote a user to admin (super admin)
+// @route   PUT /api/admin/users/:id/make-admin
+const makeAdmin = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const permission = await ensureCanMutateUser(req, user, 'make admin');
+    if (respondIfDenied(res, permission)) return;
+
+    user.isAdmin = true;
+    await user.save();
+
+    res.json({ success: true, user, message: 'User promoted to admin.' });
+  } catch (error) {
+    console.error('Make admin error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
+// @desc    Remove admin access from a user (super admin)
+// @route   PUT /api/admin/users/:id/remove-admin
+const removeAdmin = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const permission = await ensureCanMutateUser(req, user, 'remove admin from');
+    if (respondIfDenied(res, permission)) return;
+
+    user.isAdmin = false;
+    await user.save();
+
+    res.json({ success: true, user, message: 'Admin access removed.' });
+  } catch (error) {
+    console.error('Remove admin error:', error);
     res.status(500).json({ message: 'Server error.' });
   }
 };
@@ -756,6 +805,8 @@ module.exports = {
   deleteUser,
   grantBadge,
   revokeBadge,
+  makeAdmin,
+  removeAdmin,
   getModerationQueue,
   getContentDetail,
   runContentRuleCheck,

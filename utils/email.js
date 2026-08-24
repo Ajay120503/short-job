@@ -24,7 +24,7 @@ const sendVerificationEmail = async (email, name, token) => {
       <div style="max-width: 600px; margin: auto; padding: 20px; font-family: 'Inter', Arial, sans-serif; background-color: #F0F4FF; border-radius: 12px;">
         <div style="text-align: center; padding: 20px;">
           <h1 style="color: #4F46E5; font-family: 'Poppins', sans-serif;">ShortJob</h1>
-          <p style="color: #1E293B; font-size: 16px;">Where Academic Careers Begin</p>
+          <p style="color: #1E293B; font-size: 16px;">Where Careers Begin</p>
         </div>
         <div style="background: white; padding: 30px; border-radius: 8px; text-align: center;">
           <h2 style="color: #1E293B;">Welcome, ${name}! 🎓</h2>

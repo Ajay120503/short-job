@@ -494,7 +494,7 @@ const getFollowing = async (req, res) => {
 const verifyUser = async (req, res) => {
   try {
     const { verifiedStatus } = req.body;
-    if (!['none', 'email', 'institution', 'top_contributor'].includes(verifiedStatus)) {
+    if (!['none', 'email', 'institution', 'top_contributor', 'platform_owner'].includes(verifiedStatus)) {
       return res.status(400).json({ message: 'Invalid verified status.' });
     }
 

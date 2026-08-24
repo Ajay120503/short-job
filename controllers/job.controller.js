@@ -105,7 +105,7 @@ const createJob = async (req, res) => {
       institutionLogo: req.user.institutionPic || { url: '', publicId: '' },
       title,
       description,
-      roleType: roleType || 'teacher',
+      roleType: roleType || 'other',
       isPaid: isPaid === 'true' || isPaid === true,
       currency: currency || 'INR',
       stipend: stipend || 0,
