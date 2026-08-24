@@ -31,6 +31,7 @@ const attachUserFromToken = async (req, token) => {
     error.statusCode = 403;
     error.code = 'account_suspended';
     error.reason = user.blockedReason;
+    error.user = user;
     throw error;
   }
 
@@ -70,10 +71,25 @@ const authMiddleware = async (req, res, next) => {
     next();
   } catch (error) {
     if (error.code === 'account_suspended') {
+      const blockedUser = req.user || error.user;
       return res.status(403).json({
         error: 'account_suspended',
         message: error.message,
         reason: error.reason,
+        user: blockedUser
+          ? {
+              _id: blockedUser._id,
+              name: blockedUser.name,
+              email: blockedUser.email,
+              profilePic: blockedUser.profilePic,
+              badges: blockedUser.badges,
+              category: blockedUser.category,
+              isBlocked: true,
+              blockedReason: blockedUser.blockedReason,
+              blockedAt: blockedUser.blockedAt,
+              adminNotes: blockedUser.adminNotes,
+            }
+          : null,
         contact: 'support@ShortJob.in',
       });
     }

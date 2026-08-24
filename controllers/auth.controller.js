@@ -124,6 +124,17 @@ const setTokenCookies = (res, accessToken, refreshToken) => {
   });
 };
 
+const clearTokenCookies = (res) => {
+  const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    expires: new Date(0),
+  };
+  res.cookie('token', '', cookieOptions);
+  res.cookie('refreshToken', '', cookieOptions);
+};
+
 const OTP_EXPIRY_MS = 10 * 60 * 1000;
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 const OTP_RESEND_WINDOW_MS = 60 * 60 * 1000;
@@ -502,10 +513,23 @@ const login = async (req, res) => {
     }
 
     if (user.isBlocked) {
+      clearTokenCookies(res);
       return res.status(403).json({
         error: 'account_suspended',
         message: 'Your account has been suspended.',
         reason: user.blockedReason,
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          profilePic: user.profilePic,
+          badges: user.badges,
+          category: user.category,
+          isBlocked: true,
+          blockedReason: user.blockedReason,
+          blockedAt: user.blockedAt,
+          adminNotes: user.adminNotes,
+        },
       });
     }
 
@@ -692,6 +716,27 @@ const refreshToken = async (req, res) => {
 
     if (!user) {
       return res.status(401).json({ message: 'User not found.' });
+    }
+
+    if (user.isBlocked) {
+      clearTokenCookies(res);
+      return res.status(403).json({
+        error: 'account_suspended',
+        message: 'Your account has been suspended.',
+        reason: user.blockedReason,
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          profilePic: user.profilePic,
+          badges: user.badges,
+          category: user.category,
+          isBlocked: true,
+          blockedReason: user.blockedReason,
+          blockedAt: user.blockedAt,
+          adminNotes: user.adminNotes,
+        },
+      });
     }
 
     const newAccessToken = generateToken(user._id);

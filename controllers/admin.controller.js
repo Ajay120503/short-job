@@ -37,6 +37,19 @@ const getContentLink = (type, content) => {
   return '/feed';
 };
 
+const getBlockedUserSnapshot = (user) => ({
+  _id: user._id,
+  name: user.name,
+  email: user.email,
+  profilePic: user.profilePic,
+  badges: user.badges,
+  category: user.category,
+  isBlocked: true,
+  blockedReason: user.blockedReason,
+  blockedAt: user.blockedAt,
+  adminNotes: user.adminNotes,
+});
+
 const notifyModerationDecision = async ({ type, content, config, status, reason }) => {
   const recipient = content[config.authorField];
   const approved = status === 'approved';
@@ -224,6 +237,16 @@ const blockUser = async (req, res) => {
     user.adminNotes = body.notes || user.adminNotes || '';
     await user.save();
 
+    try {
+      getIO().to(user._id.toString()).emit('force_logout', {
+        message: 'Your account has been suspended.',
+        reason: user.blockedReason,
+        user: getBlockedUserSnapshot(user),
+      });
+    } catch (socketError) {
+      console.warn('Block user socket notification skipped:', socketError.message);
+    }
+
     res.json({ success: true, user });
   } catch (error) {
     console.error('Block user error:', error);
@@ -247,6 +270,14 @@ const unblockUser = async (req, res) => {
     user.blockedAt = null;
     user.blockedReason = null;
     await user.save();
+
+    try {
+      getIO().to(user._id.toString()).emit('account_unblocked', {
+        message: 'Your account access has been restored.',
+      });
+    } catch (socketError) {
+      console.warn('Unblock user socket notification skipped:', socketError.message);
+    }
 
     res.json({ success: true, user });
   } catch (error) {
