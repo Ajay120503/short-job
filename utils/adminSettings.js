@@ -1,4 +1,5 @@
 const AdminSettings = require('../models/AdminSettings');
+const { runFakeDetectionRuleOnly } = require('./fakeDetectionRuleOnly');
 
 const DEFAULT_ADMIN_SETTINGS = {
   autoApprove: false,
@@ -119,10 +120,56 @@ const getInitialModerationState = async (type) => {
   };
 };
 
+const applyInitialRuleModeration = async (contentData, type, moderationState = null) => {
+  const settings = await getAdminSettings();
+  const state = moderationState || await getInitialModerationState(type);
+  const typeKey = contentTypeKeyMap[type];
+  const rulesEnabled = Boolean(
+    settings.contentModerationRules &&
+      typeKey &&
+      settings.moderationContentTypes?.[typeKey] !== false
+  );
+
+  if (!rulesEnabled) {
+    return { ...state, moderationResult: null };
+  }
+
+  const result = await runFakeDetectionRuleOnly(contentData, type);
+  const now = new Date();
+  const moderationMeta = {
+    ...(state.moderationMeta || {}),
+    autoScore: result.score,
+    autoFlags: result.flags,
+    autoReason: result.reason,
+    autoDecision: result.decision,
+    autoSeverity: result.severity,
+    autoReviewedAt: now,
+  };
+
+  let status = state.status;
+  if (settings.moderationEnabled && settings.autoModerationEnabled && !result.approved) {
+    status = 'rejected';
+    moderationMeta.reviewedAt = now;
+    moderationMeta.reviewMethod = 'auto_rejected';
+    moderationMeta.reviewNotes = result.reason;
+  } else if (status === 'approved' && result.approved) {
+    moderationMeta.reviewedAt = moderationMeta.reviewedAt || now;
+    moderationMeta.reviewMethod = moderationMeta.reviewMethod || 'auto_approved';
+    moderationMeta.reviewNotes = moderationMeta.reviewNotes || result.reason;
+  }
+
+  return {
+    status,
+    moderationMeta,
+    moderationResult: result,
+  };
+};
+
 module.exports = {
   DEFAULT_ADMIN_SETTINGS,
   getAdminSettings,
   updateAdminSettings,
   shouldQueueForReview,
   getInitialModerationState,
+  applyInitialRuleModeration,
 };

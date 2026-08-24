@@ -5,7 +5,7 @@ const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { getIO } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
-const { getInitialModerationState } = require('../utils/adminSettings');
+const { getInitialModerationState, applyInitialRuleModeration } = require('../utils/adminSettings');
 
 const hasActiveBadge = (user, badgeType) =>
   (user.badges || []).some((badge) => badge.type === badgeType && badge.isActive !== false);
@@ -128,6 +128,10 @@ const createJob = async (req, res) => {
       };
     }
 
+    const moderatedState = await applyInitialRuleModeration(jobData, 'job', moderationState);
+    jobData.status = moderatedState.status;
+    jobData.moderationMeta = moderatedState.moderationMeta;
+
     const job = await JobPost.create(jobData);
     jobCreated = true;
     const populatedJob = await JobPost.findById(job._id)
@@ -139,8 +143,8 @@ const createJob = async (req, res) => {
       type: 'job',
       text: populatedJob.title,
       jobPost: populatedJob._id,
-      status: moderationState.status,
-      moderationMeta: moderationState.moderationMeta,
+      status: populatedJob.status,
+      moderationMeta: populatedJob.moderationMeta,
     });
 
     // Notify followers about new job post

@@ -357,16 +357,26 @@ const getModerationQueue = async (req, res) => {
     const results = await Promise.all(
       types.map(async (itemType) => {
         const config = CONTENT_MODELS[itemType];
+        const reviewStatusQuery = {
+          $or: [
+            { status: 'pending_review' },
+            { status: 'rejected', 'moderationMeta.reviewMethod': 'auto_rejected' },
+          ],
+        };
         const query = itemType === 'post'
           ? {
-              status: 'pending_review',
-              $or: [
-                { type: { $ne: 'job' } },
-                { jobPost: null },
-                { jobPost: { $exists: false } },
+              $and: [
+                reviewStatusQuery,
+                {
+                  $or: [
+                    { type: { $ne: 'job' } },
+                    { jobPost: null },
+                    { jobPost: { $exists: false } },
+                  ],
+                },
               ],
             }
-          : { status: 'pending_review' };
+          : reviewStatusQuery;
         const docs = await config.Model.find(query)
           .populate(config.populate, 'name email profilePic badges category institutionName openToOpportunities isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant')
           .sort({ createdAt: 1 });
@@ -532,6 +542,10 @@ const runContentRuleCheck = async (req, res) => {
       reviewNotes: result.reason,
       autoScore: result.score,
       autoFlags: result.flags,
+      autoReason: result.reason,
+      autoDecision: result.decision,
+      autoSeverity: result.severity,
+      autoReviewedAt: new Date(),
     };
 
     await content.save();

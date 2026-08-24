@@ -1,6 +1,6 @@
 const Story = require('../models/Story');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
-const { getInitialModerationState } = require('../utils/adminSettings');
+const { getInitialModerationState, applyInitialRuleModeration } = require('../utils/adminSettings');
 
 const USER_SIGNAL_SELECT = 'name profilePic badges role category institutionName institutionPic openToOpportunities isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant';
 
@@ -31,6 +31,10 @@ const createStory = async (req, res) => {
         publicId: result.public_id,
       };
     }
+
+    const moderatedState = await applyInitialRuleModeration(storyData, 'story', moderationState);
+    storyData.status = moderatedState.status;
+    storyData.moderationMeta = moderatedState.moderationMeta;
 
     const story = await Story.create(storyData);
     storyCreated = true;

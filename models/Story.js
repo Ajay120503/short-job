@@ -37,6 +37,10 @@ const storySchema = new mongoose.Schema(
       reviewNotes: String,
       autoScore: Number,
       autoFlags: [mongoose.Schema.Types.Mixed],
+      autoReason: String,
+      autoDecision: String,
+      autoSeverity: String,
+      autoReviewedAt: Date,
       adminWindowExpiredAt: Date,
     },
     createdAt: {

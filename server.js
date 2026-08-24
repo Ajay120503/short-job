@@ -110,6 +110,10 @@ const runAutoModerationPass = async () => {
           reviewNotes: result.reason,
           autoScore: result.score,
           autoFlags: result.flags,
+          autoReason: result.reason,
+          autoDecision: result.decision,
+          autoSeverity: result.severity,
+          autoReviewedAt: new Date(),
         };
         await item.save();
         await syncAutoModerationLinks(config.type, item);

@@ -4,7 +4,7 @@ const Notification = require('../models/Notification');
 const { getIO } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 const { runFakeDetectionRuleOnly } = require('../utils/fakeDetectionRuleOnly');
-const { getInitialModerationState } = require('../utils/adminSettings');
+const { getInitialModerationState, applyInitialRuleModeration } = require('../utils/adminSettings');
 
 const USER_SIGNAL_SELECT = 'name profilePic badges role category institutionName institutionPic openToOpportunities isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant';
 
@@ -135,6 +135,10 @@ const createPost = async (req, res) => {
         });
       }
     }
+
+    const moderatedState = await applyInitialRuleModeration(postData, 'post', moderationState);
+    postData.status = moderatedState.status;
+    postData.moderationMeta = moderatedState.moderationMeta;
 
     const post = await Post.create(postData);
     postCreated = true;
