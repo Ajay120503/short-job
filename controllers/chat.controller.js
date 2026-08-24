@@ -49,7 +49,7 @@ const getConversations = async (req, res) => {
     const conversations = await Conversation.find({
       participants: req.user._id,
     })
-      .populate('participants', 'name profilePic role openToOpportunities profileThemeVariant')
+      .populate('participants', 'name profilePic role openToOpportunities profileThemeVariant showOnlineStatus')
       .populate('lastMessageSender', 'name')
       .sort({ updatedAt: -1 });
 
@@ -70,7 +70,10 @@ const getConversations = async (req, res) => {
         ...conv.toObject(),
         unreadCounts: normalizeUnreadCounts(conv),
         otherParticipant,
-        isOnline: onlineUsers.has(otherParticipant?._id.toString()),
+        isOnline:
+          req.user.showOnlineStatus !== false &&
+          otherParticipant?.showOnlineStatus !== false &&
+          onlineUsers.has(otherParticipant?._id.toString()),
       });
     });
 
@@ -159,7 +162,7 @@ const createConversation = async (req, res) => {
         ],
       })
         .sort({ updatedAt: -1 })
-        .populate('participants', 'name profilePic role openToOpportunities profileThemeVariant');
+        .populate('participants', 'name profilePic role openToOpportunities profileThemeVariant showOnlineStatus');
 
       const existingConversation = existingConversations.find((item) =>
         hasExactlyParticipants(item, participantIds)
@@ -184,7 +187,7 @@ const createConversation = async (req, res) => {
       });
 
       return Conversation.findById(created._id)
-        .populate('participants', 'name profilePic role openToOpportunities profileThemeVariant');
+        .populate('participants', 'name profilePic role openToOpportunities profileThemeVariant showOnlineStatus');
     });
 
     res.status(201).json({ success: true, conversation });

@@ -19,12 +19,14 @@ const {
   updateTimeline,
   updateMyBadges,
   getUserBadges,
+  getOnlineUserIds,
 } = require('../controllers/user.controller');
 
 // Static routes MUST be before /:id
 router.patch('/me/opportunity-status', authMiddleware, toggleOpportunityStatus);
 router.post('/me/badges', authMiddleware, updateMyBadges);
 router.post('/request-verification', authMiddleware, uploadProfile.single('document'), requestVerification);
+router.get('/online', authMiddleware, getOnlineUserIds);
 
 // Public routes
 router.get('/search', optionalAuth, searchUsers);

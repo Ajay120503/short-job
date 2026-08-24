@@ -26,8 +26,29 @@ const initSocket = (httpServer) => {
     console.log(`User connected: ${socket.id}`);
 
     // Join personal room and track online status
-    socket.on('join_room', (userId) => {
+    socket.on('join_room', (payload) => {
+      const userId = typeof payload === 'object' ? payload.userId : payload;
+      const sharePresence =
+        typeof payload === 'object' ? payload.sharePresence !== false : true;
+      if (!userId) return;
+
       socket.join(userId);
+
+      if (!sharePresence) {
+        const existingSockets = onlineUsers.get(userId);
+        const wasOnline = Boolean(existingSockets?.size);
+        if (existingSockets) {
+          existingSockets.delete(socket.id);
+          if (existingSockets.size === 0) {
+            onlineUsers.delete(userId);
+          }
+        }
+        if (wasOnline && !onlineUsers.has(userId)) {
+          io.emit('online_status', { userId, isOnline: false });
+        }
+        console.log(`User ${userId} joined privately`);
+        return;
+      }
 
       // Track all socket IDs for this user (supports multiple tabs)
       if (!onlineUsers.has(userId)) {

@@ -2,7 +2,7 @@ const User = require('../models/User');
 const Post = require('../models/Post');
 const JobPost = require('../models/JobPost');
 const Notification = require('../models/Notification');
-const { getIO } = require('../config/socket');
+const { getIO, getOnlineUsers } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 
 const SELF_BADGES = [
@@ -16,6 +16,30 @@ const hasActiveBadge = (user, badgeType) =>
   (user.badges || []).some((badge) => badge.type === badgeType && badge.isActive !== false);
 
 const canUseOpportunityStatus = (user) => Boolean(user);
+
+// @desc    Get online user IDs for global presence indicators
+// @route   GET /api/users/online
+const getOnlineUserIds = async (req, res) => {
+  try {
+    if (req.user.showOnlineStatus === false) {
+      return res.json({ success: true, onlineUserIds: [] });
+    }
+
+    const socketOnlineUserIds = Array.from(getOnlineUsers().keys());
+    const visibleUsers = await User.find({
+      _id: { $in: socketOnlineUserIds },
+      showOnlineStatus: { $ne: false },
+    }).select('_id');
+
+    res.json({
+      success: true,
+      onlineUserIds: visibleUsers.map((user) => user._id.toString()),
+    });
+  } catch (error) {
+    console.error('Get online users error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
 
 const canUseSpecialProfileStyle = (user) => {
   if (!user) return false;
@@ -81,7 +105,7 @@ const updateProfile = async (req, res) => {
       'address', 'city', 'state',
       'linkedinUrl', 'profession', 'isCurrentlyWorking',
       'currentPosition', 'currentCompany', 'previousWork',
-      'profileThemeVariant',
+      'profileThemeVariant', 'showOnlineStatus',
     ];
 
     const arrayFields = ['skills', 'qualifications', 'interests'];
@@ -105,7 +129,7 @@ const updateProfile = async (req, res) => {
           }
         }
         updates[field] =
-          field === 'isCurrentlyWorking'
+          field === 'isCurrentlyWorking' || field === 'showOnlineStatus'
             ? req.body[field] === true || req.body[field] === 'true'
             : req.body[field];
       }
@@ -151,6 +175,18 @@ const updateProfile = async (req, res) => {
       returnDocument: 'after',
       runValidators: true,
     });
+
+    if (
+      Object.prototype.hasOwnProperty.call(updates, 'showOnlineStatus') &&
+      updates.showOnlineStatus === false
+    ) {
+      try {
+        getIO().emit('online_status', {
+          userId: user._id.toString(),
+          isOnline: false,
+        });
+      } catch (socketErr) {}
+    }
 
     res.json({ success: true, user });
   } catch (error) {
@@ -593,6 +629,7 @@ const getUserBadges = async (req, res) => {
 
 module.exports = {
   getUserProfile,
+  getOnlineUserIds,
   updateProfile,
   followUser,
   searchUsers,
