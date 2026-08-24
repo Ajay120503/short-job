@@ -84,6 +84,8 @@ const getJobs = async (req, res) => {
 // @desc    Create a job post
 // @route   POST /api/jobs
 const createJob = async (req, res) => {
+  let uploadedJobImagePublicId = '';
+  let jobCreated = false;
   try {
     const {
       title, description, institutionName, roleType, isPaid,
@@ -119,6 +121,7 @@ const createJob = async (req, res) => {
     // Upload job image if provided
     if (req.file) {
       const result = await uploadToCloudinary(req.file, 'ShortJob/job-images');
+      uploadedJobImagePublicId = result.public_id;
       jobData.image = {
         url: result.secure_url,
         publicId: result.public_id,
@@ -126,6 +129,7 @@ const createJob = async (req, res) => {
     }
 
     const job = await JobPost.create(jobData);
+    jobCreated = true;
     const populatedJob = await JobPost.findById(job._id)
       .populate('postedBy', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
 
@@ -162,6 +166,9 @@ const createJob = async (req, res) => {
 
     res.status(201).json({ success: true, job: populatedJob });
   } catch (error) {
+    if (!jobCreated && uploadedJobImagePublicId) {
+      await deleteFromCloudinary(uploadedJobImagePublicId);
+    }
     console.error('Create job error:', error);
     res.status(500).json({ message: 'Server error.' });
   }
@@ -267,6 +274,22 @@ const deleteJob = async (req, res) => {
       await deleteFromCloudinary(job.image.publicId);
     }
 
+    const applications = await Application.find({ jobPost: job._id }).select('coverLetterFile');
+    for (const application of applications) {
+      if (application.coverLetterFile?.publicId || application.coverLetterFile?.url) {
+        await deleteFromCloudinary(
+          application.coverLetterFile.publicId || application.coverLetterFile.url
+        );
+      }
+    }
+
+    const linkedPosts = await Post.find({ jobPost: job._id }).select('images');
+    for (const post of linkedPosts) {
+      for (const image of post.images || []) {
+        await deleteFromCloudinary(image.publicId || image.url);
+      }
+    }
+
     // Delete associated applications
     await Application.deleteMany({ jobPost: job._id });
 
@@ -285,6 +308,8 @@ const deleteJob = async (req, res) => {
 // @desc    Apply to a job
 // @route   POST /api/jobs/:id/apply
 const applyToJob = async (req, res) => {
+  let uploadedCoverLetterPublicId = '';
+  let applicationCreated = false;
   try {
     const job = await JobPost.findById(req.params.id);
 
@@ -326,6 +351,7 @@ const applyToJob = async (req, res) => {
     // Upload cover letter PDF if provided
     if (req.file) {
       const result = await uploadToCloudinary(req.file, 'ShortJob/resumes');
+      uploadedCoverLetterPublicId = result.public_id;
       applicationData.coverLetterFile = {
         url: result.secure_url,
         publicId: result.public_id,
@@ -333,6 +359,7 @@ const applyToJob = async (req, res) => {
     }
 
     const application = await Application.create(applicationData);
+    applicationCreated = true;
 
     // Add applicant to job
     job.applicants.push(req.user._id);
@@ -358,6 +385,9 @@ const applyToJob = async (req, res) => {
 
     res.status(201).json({ success: true, application });
   } catch (error) {
+    if (!applicationCreated && uploadedCoverLetterPublicId) {
+      await deleteFromCloudinary(uploadedCoverLetterPublicId);
+    }
     console.error('Apply to job error:', error);
     res.status(500).json({ message: 'Server error.' });
   }

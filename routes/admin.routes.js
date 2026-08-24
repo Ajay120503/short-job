@@ -19,6 +19,7 @@ const {
   getLoginRecords,
   getLoginRecordDetail,
   getUserLoginRecords,
+  deleteLoginRecord,
 } = require('../controllers/admin.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
 
@@ -47,6 +48,7 @@ router.put('/settings', authMiddleware, adminMiddleware, updateAdminSettings);
 router.get('/login-records', authMiddleware, adminMiddleware, getLoginRecords);
 router.get('/login-records/user/:userId', authMiddleware, adminMiddleware, getUserLoginRecords);
 router.get('/login-records/:id', authMiddleware, adminMiddleware, getLoginRecordDetail);
+router.delete('/login-records/:id', authMiddleware, adminMiddleware, deleteLoginRecord);
 router.get('/queue', authMiddleware, adminMiddleware, getModerationQueue);
 router.get('/content/:type/:id', authMiddleware, adminMiddleware, getContentDetail);
 router.put('/content/:type/:id/run-check', authMiddleware, adminMiddleware, runContentRuleCheck);

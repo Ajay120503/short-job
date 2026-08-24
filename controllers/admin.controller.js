@@ -3,7 +3,13 @@ const Post = require('../models/Post');
 const JobPost = require('../models/JobPost');
 const Story = require('../models/Story');
 const LoginRecord = require('../models/LoginRecord');
+const Application = require('../models/Application');
+const Conversation = require('../models/Conversation');
+const Message = require('../models/Message');
+const Comment = require('../models/Comment');
 const Notification = require('../models/Notification');
+const { deleteFromCloudinary } = require('../middlewares/upload.middleware');
+const { collectUserCloudinaryAssets, deleteCloudinaryAssets } = require('../utils/cloudinaryCleanup');
 const { getIO } = require('../config/socket');
 const {
   getAdminSettings: readAdminSettings,
@@ -222,15 +228,25 @@ const updateUserNotes = async (req, res) => {
 // @route   DELETE /api/admin/users/:id
 const deleteUser = async (req, res) => {
   try {
-    const user = await User.findByIdAndDelete(req.params.id);
+    const user = await User.findById(req.params.id);
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
+    const userJobIds = await JobPost.find({ postedBy: user._id }).distinct('_id');
+    const conversationIds = await Conversation.find({ participants: user._id }).distinct('_id');
+    const assets = await collectUserCloudinaryAssets(user._id);
+    await deleteCloudinaryAssets(assets);
 
     await Promise.all([
+      User.findByIdAndDelete(user._id),
       Post.deleteMany({ author: user._id }),
       JobPost.deleteMany({ postedBy: user._id }),
       Story.deleteMany({ author: user._id }),
+      Application.deleteMany({ $or: [{ applicant: user._id }, { jobPost: { $in: userJobIds } }] }),
+      LoginRecord.deleteMany({ user: user._id }),
+      Conversation.deleteMany({ participants: user._id }),
+      Message.deleteMany({ $or: [{ sender: user._id }, { conversation: { $in: conversationIds } }] }),
+      Comment.deleteMany({ author: user._id }),
       Notification.deleteMany({ $or: [{ recipient: user._id }, { sender: user._id }] }),
       User.updateMany({ followers: user._id }, { $pull: { followers: user._id } }),
       User.updateMany({ following: user._id }, { $pull: { following: user._id } }),
@@ -648,6 +664,27 @@ const getUserLoginRecords = async (req, res) => {
   }
 };
 
+// @desc    Delete any login audit record
+// @route   DELETE /api/admin/login-records/:id
+const deleteLoginRecord = async (req, res) => {
+  try {
+    const record = await LoginRecord.findById(req.params.id);
+    if (!record) {
+      return res.status(404).json({ message: 'Login record not found.' });
+    }
+
+    if (record.photo?.publicId) {
+      await deleteFromCloudinary(record.photo.publicId);
+    }
+    await record.deleteOne();
+
+    res.json({ success: true, message: 'Login record deleted.' });
+  } catch (error) {
+    console.error('Delete login record error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserDetail,
@@ -667,4 +704,5 @@ module.exports = {
   getLoginRecords,
   getLoginRecordDetail,
   getUserLoginRecords,
+  deleteLoginRecord,
 };

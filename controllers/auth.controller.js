@@ -14,8 +14,9 @@ const LoginRecord = require('../models/LoginRecord');
 const { sendVerificationEmail, sendPasswordResetOTP, sendRegistrationOTP } = require('../utils/email');
 const { getIO } = require('../config/socket');
 const cloudinary = require('../config/cloudinary');
-const { uploadToCloudinary } = require('../middlewares/upload.middleware');
+const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 const { getAdminSettings } = require('../utils/adminSettings');
+const { collectUserCloudinaryAssets, deleteCloudinaryAssets } = require('../utils/cloudinaryCleanup');
 
 // Generate JWT Token
 const generateToken = (id) => {
@@ -32,7 +33,7 @@ const generateRefreshToken = (id) => {
 };
 
 const generateLoginAuditToken = (id) => {
-  return jwt.sign({ id, scope: 'login_audit' }, process.env.JWT_SECRET, {
+  return jwt.sign({ id, scope: 'login_audit', jti: crypto.randomUUID() }, process.env.JWT_SECRET, {
     expiresIn: '2m',
   });
 };
@@ -379,6 +380,15 @@ const completeLoginAudit = async (req, res) => {
       return res.status(401).json({ message: 'Invalid audit token.' });
     }
 
+    if (!decoded.jti) {
+      return res.status(401).json({ message: 'Invalid audit token.' });
+    }
+
+    const existingRecord = await LoginRecord.findOne({ auditTokenId: decoded.jti });
+    if (existingRecord) {
+      return res.status(409).json({ message: 'This security verification was already used. Please sign in again.' });
+    }
+
     const settings = await getAdminSettings();
     if (!settings.loginAuditEnabled) {
       return res.status(400).json({ message: 'Login audit is not enabled.' });
@@ -407,25 +417,38 @@ const completeLoginAudit = async (req, res) => {
     const geo = await reverseGeocode(lat, lng);
     const userAgent = req.headers['user-agent'] || '';
 
-    await LoginRecord.create({
-      user: user._id,
-      photo: {
-        url: buildAuthenticatedCloudinaryUrl(uploaded.public_id),
-        publicId: uploaded.public_id,
-      },
-      location: {
-        lat,
-        lng,
-        city: geo.city,
-        state: geo.state,
-        accuracy: Number.isFinite(accuracy) ? accuracy : undefined,
-      },
-      device: {
-        userAgent,
-        browser: parseBrowser(userAgent),
-        ip: getClientIp(req),
-      },
-    });
+    try {
+      await LoginRecord.create({
+        user: user._id,
+        photo: {
+          url: buildAuthenticatedCloudinaryUrl(uploaded.public_id),
+          publicId: uploaded.public_id,
+        },
+        location: {
+          lat,
+          lng,
+          city: geo.city,
+          state: geo.state,
+          accuracy: Number.isFinite(accuracy) ? accuracy : undefined,
+        },
+        device: {
+          userAgent,
+          browser: parseBrowser(userAgent),
+          ip: getClientIp(req),
+        },
+        auditTokenId: decoded.jti,
+      });
+    } catch (createError) {
+      if (uploaded.public_id) {
+        await deleteFromCloudinary(uploaded.public_id);
+      }
+      if (createError.code === 11000) {
+        return res.status(409).json({
+          message: 'This security verification was already used. Please sign in again.',
+        });
+      }
+      throw createError;
+    }
 
     const accessToken = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
@@ -685,26 +708,33 @@ const refreshToken = async (req, res) => {
 const deleteAccount = async (req, res) => {
   try {
     const userId = req.user._id;
+    const userJobIds = await JobPost.find({ postedBy: userId }).distinct('_id');
+    const conversationIds = await Conversation.find({ participants: userId }).distinct('_id');
+    const assets = await collectUserCloudinaryAssets(userId);
+    await deleteCloudinaryAssets(assets);
 
     // First, get all comment IDs made by this user to clean up Post references
-    const userCommentIds = await Comment.find({ user: userId }).distinct('_id');
+    const userCommentIds = await Comment.find({ author: userId }).distinct('_id');
 
     // Run all deletions and cleanups in parallel
     await Promise.all([
       // Delete user's own documents
       User.findByIdAndDelete(userId),
-      Post.deleteMany({ user: userId }),
-      Comment.deleteMany({ user: userId }),
-      Application.deleteMany({ user: userId }),
+      Post.deleteMany({ author: userId }),
+      Comment.deleteMany({ author: userId }),
+      Application.deleteMany({ $or: [{ applicant: userId }, { jobPost: { $in: userJobIds } }] }),
       JobPost.deleteMany({ postedBy: userId }),
+      Story.deleteMany({ author: userId }),
+      LoginRecord.deleteMany({ user: userId }),
       Conversation.deleteMany({ participants: userId }),
-      Message.deleteMany({ sender: userId }),
+      Message.deleteMany({ $or: [{ sender: userId }, { conversation: { $in: conversationIds } }] }),
       Notification.deleteMany({ recipient: userId }),
+      Notification.deleteMany({ sender: userId }),
 
       // Remove user's likes from all posts
       Post.updateMany({ likes: userId }, { $pull: { likes: userId } }),
       // Remove user's saves from all posts
-      Post.updateMany({ savedBy: userId }, { $pull: { savedBy: userId } }),
+      Post.updateMany({ saves: userId }, { $pull: { saves: userId } }),
       // Remove user's comment references from posts
       Post.updateMany({ comments: { $in: userCommentIds } }, { $pull: { comments: { $in: userCommentIds } } }),
 

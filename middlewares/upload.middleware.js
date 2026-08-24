@@ -105,9 +105,30 @@ const uploadToCloudinary = async (file, folder, options = {}) => {
 };
 
 // Delete from Cloudinary helper
-const deleteFromCloudinary = async (publicId) => {
+const getPublicIdFromCloudinaryUrl = (url) => {
+  if (!url || typeof url !== 'string' || !url.includes('/upload/')) return '';
+  const [, afterUpload] = url.split('/upload/');
+  if (!afterUpload) return '';
+  const withoutTransform = afterUpload.replace(/^.*?\/v\d+\//, '');
+  const withoutVersion = withoutTransform.replace(/^v\d+\//, '');
+  const withoutExtension = withoutVersion.replace(/\.[^/.]+$/, '');
+  return decodeURIComponent(withoutExtension);
+};
+
+const deleteFromCloudinary = async (publicIdOrUrl) => {
+  const publicId = publicIdOrUrl?.includes?.('/upload/')
+    ? getPublicIdFromCloudinaryUrl(publicIdOrUrl)
+    : publicIdOrUrl;
+  if (!publicId) return;
+
   try {
-    await cloudinary.uploader.destroy(publicId);
+    const resourceTypes = ['image', 'raw', 'video'];
+    for (const resource_type of resourceTypes) {
+      const result = await cloudinary.uploader.destroy(publicId, { resource_type });
+      if (result?.result === 'ok' || result?.result === 'not found') {
+        if (result.result === 'ok') return;
+      }
+    }
   } catch (error) {
     console.error('Cloudinary delete error:', error);
   }
@@ -128,4 +149,5 @@ module.exports = {
   uploadProfile,
   uploadToCloudinary,
   deleteFromCloudinary,
+  getPublicIdFromCloudinaryUrl,
 };

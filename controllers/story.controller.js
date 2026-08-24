@@ -7,6 +7,8 @@ const USER_SIGNAL_SELECT = 'name profilePic badges role category institutionName
 // @desc    F13 — Create a story
 // @route   POST /api/stories
 const createStory = async (req, res) => {
+  let uploadedStoryPublicId = '';
+  let storyCreated = false;
   try {
     const { text } = req.body;
     if (!req.file && !text) {
@@ -23,6 +25,7 @@ const createStory = async (req, res) => {
 
     if (req.file) {
       const result = await uploadToCloudinary(req.file, 'ShortJob/stories');
+      uploadedStoryPublicId = result.public_id;
       storyData.image = {
         url: result.secure_url,
         publicId: result.public_id,
@@ -30,11 +33,15 @@ const createStory = async (req, res) => {
     }
 
     const story = await Story.create(storyData);
+    storyCreated = true;
     const populated = await Story.findById(story._id)
       .populate('author', USER_SIGNAL_SELECT);
 
     res.status(201).json({ success: true, story: populated });
   } catch (error) {
+    if (!storyCreated && uploadedStoryPublicId) {
+      await deleteFromCloudinary(uploadedStoryPublicId);
+    }
     console.error('Create story error:', error);
     res.status(500).json({ message: 'Server error.' });
   }

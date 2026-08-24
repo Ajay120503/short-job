@@ -99,6 +99,8 @@ const getFeed = async (req, res) => {
 // @desc    Create a new post
 // @route   POST /api/posts
 const createPost = async (req, res) => {
+  const uploadedPublicIds = [];
+  let postCreated = false;
   try {
     const { text, type, tags } = req.body;
 
@@ -126,6 +128,7 @@ const createPost = async (req, res) => {
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
         const result = await uploadToCloudinary(file, 'ShortJob/post-images');
+        uploadedPublicIds.push(result.public_id);
         postData.images.push({
           url: result.secure_url,
           publicId: result.public_id,
@@ -134,6 +137,7 @@ const createPost = async (req, res) => {
     }
 
     const post = await Post.create(postData);
+    postCreated = true;
     const populatedPost = await Post.findById(post._id)
       .populate('author', USER_SIGNAL_SELECT);
 
@@ -142,6 +146,11 @@ const createPost = async (req, res) => {
 
     res.status(201).json({ success: true, post: populatedPost });
   } catch (error) {
+    if (!postCreated) {
+      for (const publicId of uploadedPublicIds) {
+        await deleteFromCloudinary(publicId);
+      }
+    }
     console.error('Create post error:', error);
     res.status(500).json({ message: 'Server error.' });
   }

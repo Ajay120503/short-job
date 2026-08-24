@@ -1,7 +1,7 @@
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
 const { getIO, getOnlineUsers } = require('../config/socket');
-const { uploadToCloudinary } = require('../middlewares/upload.middleware');
+const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 
 const conversationLocks = new Map();
 
@@ -447,8 +447,14 @@ const deleteMessage = async (req, res) => {
     }
 
     // Soft delete - replace content with deletion notice
+    if (message.filePublicId || message.fileUrl) {
+      await deleteFromCloudinary(message.filePublicId || message.fileUrl);
+    }
     message.content = 'This message was deleted';
     message.type = 'deleted';
+    message.fileUrl = '';
+    message.filePublicId = '';
+    message.fileName = '';
     message.deletedAt = new Date();
     await message.save();
 
@@ -484,8 +490,13 @@ const clearConversation = async (req, res) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
-    // Soft delete all text messages in this conversation by the current user
-    // or hard delete all messages (clear conversation entirely)
+    const messages = await Message.find({ conversation: id }).select('filePublicId fileUrl');
+    for (const message of messages) {
+      if (message.filePublicId || message.fileUrl) {
+        await deleteFromCloudinary(message.filePublicId || message.fileUrl);
+      }
+    }
+
     await Message.deleteMany({ conversation: id });
 
     // Reset conversation last message
@@ -523,7 +534,13 @@ const deleteConversation = async (req, res) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
-    // Delete all messages in the conversation
+    const messages = await Message.find({ conversation: id }).select('filePublicId fileUrl');
+    for (const message of messages) {
+      if (message.filePublicId || message.fileUrl) {
+        await deleteFromCloudinary(message.filePublicId || message.fileUrl);
+      }
+    }
+
     await Message.deleteMany({ conversation: id });
 
     // Delete the conversation itself

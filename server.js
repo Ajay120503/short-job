@@ -14,8 +14,10 @@ const { initSocket } = require('./config/socket');
 const Post = require('./models/Post');
 const JobPost = require('./models/JobPost');
 const Story = require('./models/Story');
+const LoginRecord = require('./models/LoginRecord');
 const { runFakeDetectionRuleOnly } = require('./utils/fakeDetectionRuleOnly');
 const { getAdminSettings } = require('./utils/adminSettings');
+const { deleteFromCloudinary } = require('./middlewares/upload.middleware');
 
 // Import routes
 const authRoutes = require('./routes/auth.routes');
@@ -114,6 +116,38 @@ const runAutoModerationPass = async () => {
       } catch (error) {
         console.error(`Auto moderation failed for ${config.type} ${item._id}:`, error.message);
       }
+    }
+  }
+};
+
+const cleanupExpiredLoginRecords = async () => {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const records = await LoginRecord.find({ loginAt: { $lte: cutoff } }).limit(100);
+
+  for (const record of records) {
+    try {
+      if (record.photo?.publicId) {
+        await deleteFromCloudinary(record.photo.publicId);
+      }
+      await record.deleteOne();
+    } catch (error) {
+      console.error(`Login record cleanup failed for ${record._id}:`, error.message);
+    }
+  }
+};
+
+const cleanupExpiredStories = async () => {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const stories = await Story.find({ createdAt: { $lte: cutoff } }).limit(100);
+
+  for (const story of stories) {
+    try {
+      if (story.image?.publicId || story.image?.url) {
+        await deleteFromCloudinary(story.image.publicId || story.image.url);
+      }
+      await story.deleteOne();
+    } catch (error) {
+      console.error(`Story cleanup failed for ${story._id}:`, error.message);
     }
   }
 };
@@ -263,12 +297,27 @@ const startServer = async () => {
     runAutoModerationPass().catch((error) => {
       console.error('Initial auto moderation pass failed:', error.message);
     });
+    cleanupExpiredLoginRecords().catch((error) => {
+      console.error('Initial login record cleanup failed:', error.message);
+    });
+    cleanupExpiredStories().catch((error) => {
+      console.error('Initial story cleanup failed:', error.message);
+    });
 
     setInterval(() => {
       runAutoModerationPass().catch((error) => {
         console.error('Auto moderation pass failed:', error.message);
       });
     }, 30 * 1000);
+
+    setInterval(() => {
+      cleanupExpiredLoginRecords().catch((error) => {
+        console.error('Login record cleanup failed:', error.message);
+      });
+      cleanupExpiredStories().catch((error) => {
+        console.error('Story cleanup failed:', error.message);
+      });
+    }, 60 * 60 * 1000);
   } catch (error) {
     console.error('Failed to start server:', error.message);
     process.exit(1);

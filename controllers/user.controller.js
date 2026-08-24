@@ -69,6 +69,31 @@ const getMyLoginHistory = async (req, res) => {
   }
 };
 
+// @desc    Delete one of the logged-in user's own login records
+// @route   DELETE /api/users/me/login-history/:id
+const deleteMyLoginRecord = async (req, res) => {
+  try {
+    const record = await LoginRecord.findOne({
+      _id: req.params.id,
+      user: req.user._id,
+    });
+
+    if (!record) {
+      return res.status(404).json({ message: 'Login record not found.' });
+    }
+
+    if (record.photo?.publicId) {
+      await deleteFromCloudinary(record.photo.publicId);
+    }
+    await record.deleteOne();
+
+    res.json({ success: true, message: 'Login record deleted.' });
+  } catch (error) {
+    console.error('Delete login record error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
 const canUseSpecialProfileStyle = (user) => {
   if (!user) return false;
   const activeDaysCount = Array.isArray(user.activeDays) ? user.activeDays.length : 0;
@@ -175,20 +200,18 @@ const updateProfile = async (req, res) => {
       }
     }
 
+    const oldProfilePicPublicId = req.user.profilePic?.publicId;
+    const oldInstitutionPicPublicId = req.user.institutionPic?.publicId;
+    const oldResumeUrl = req.user.resumeUrl;
+
     // Handle profile picture upload
     if (req.files?.profilePic?.[0]) {
-      if (req.user.profilePic?.publicId) {
-        await deleteFromCloudinary(req.user.profilePic.publicId);
-      }
       const result = await uploadToCloudinary(req.files.profilePic[0], 'ShortJob/profile-pics');
       updates.profilePic = { url: result.secure_url, publicId: result.public_id };
     }
 
     // Handle institution picture upload
     if (req.files?.institutionPic?.[0]) {
-      if (req.user.institutionPic?.publicId) {
-        await deleteFromCloudinary(req.user.institutionPic.publicId);
-      }
       const result = await uploadToCloudinary(req.files.institutionPic[0], 'ShortJob/institution-pics');
       updates.institutionPic = { url: result.secure_url, publicId: result.public_id };
     }
@@ -203,6 +226,24 @@ const updateProfile = async (req, res) => {
       returnDocument: 'after',
       runValidators: true,
     });
+
+    if (updates.profilePic && oldProfilePicPublicId) {
+      await deleteFromCloudinary(oldProfilePicPublicId);
+    }
+
+    if (updates.institutionPic) {
+      await JobPost.updateMany(
+        { postedBy: user._id },
+        { institutionLogo: updates.institutionPic }
+      );
+      if (oldInstitutionPicPublicId) {
+        await deleteFromCloudinary(oldInstitutionPicPublicId);
+      }
+    }
+
+    if (updates.resumeUrl && oldResumeUrl) {
+      await deleteFromCloudinary(oldResumeUrl);
+    }
 
     if (
       Object.prototype.hasOwnProperty.call(updates, 'showOnlineStatus') &&
@@ -486,11 +527,18 @@ const requestVerification = async (req, res) => {
     }
 
     const result = await uploadToCloudinary(req.file, 'ShortJob/verification-docs');
-    req.user.verificationDocuments.push({
+    const oldDocuments = req.user.verificationDocuments || [];
+    req.user.verificationDocuments = [{
       url: result.secure_url,
       publicId: result.public_id,
-    });
+    }];
     await req.user.save();
+
+    for (const doc of oldDocuments) {
+      if (doc.publicId || doc.url) {
+        await deleteFromCloudinary(doc.publicId || doc.url);
+      }
+    }
 
     res.json({ success: true, message: 'Verification request submitted.', user: req.user });
   } catch (error) {
@@ -659,6 +707,7 @@ module.exports = {
   getUserProfile,
   getOnlineUserIds,
   getMyLoginHistory,
+  deleteMyLoginRecord,
   updateProfile,
   followUser,
   searchUsers,
