@@ -95,9 +95,13 @@ const updateProfile = async (req, res) => {
               message: 'Your account does not have permission to customize the profile color yet.',
             });
           }
-          const allowedVariants = ['teal', 'coral', 'emerald', 'amber', 'indigo', 'sky', 'deep-teal', 'rose', 'slate', 'violet', 'pink'];
+          const allowedVariants = ['teal', 'coral', 'emerald', 'amber', 'indigo', 'sky', 'deep-teal', 'rose', 'slate', 'violet', 'pink', 'premium'];
           if (!allowedVariants.includes(req.body[field])) {
             return res.status(400).json({ message: 'Invalid profile theme variant.' });
+          }
+          // Premium Gold is admin-only
+          if (req.body[field] === 'premium' && !(req.user.isAdmin || req.user.isSuperAdmin)) {
+            return res.status(403).json({ message: 'Premium Gold is reserved for platform admins only.' });
           }
         }
         updates[field] =

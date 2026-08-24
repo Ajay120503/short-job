@@ -188,7 +188,7 @@ const userSchema = new mongoose.Schema(
     openToOpportunities: { type: Boolean, default: false },
     profileThemeVariant: {
       type: String,
-      enum: ['teal', 'coral', 'emerald', 'amber', 'indigo', 'sky', 'deep-teal', 'rose', 'slate', 'violet', 'pink'],
+      enum: ['teal', 'coral', 'emerald', 'amber', 'indigo', 'sky', 'deep-teal', 'rose', 'slate', 'violet', 'pink', 'premium'],
       default: 'teal',
     },
     isAdmin: { type: Boolean, default: false },
