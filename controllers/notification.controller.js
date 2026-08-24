@@ -53,6 +53,30 @@ const markAllRead = async (req, res) => {
   }
 };
 
+// @desc    Mark all notifications as read, then delete them
+// @route   DELETE /api/notifications
+const deleteAllNotifications = async (req, res) => {
+  try {
+    const filter = { recipient: req.user._id };
+    const markedRead = await Notification.updateMany(
+      { ...filter, isRead: false },
+      { isRead: true }
+    );
+    const deleted = await Notification.deleteMany(filter);
+
+    res.json({
+      success: true,
+      message: 'All notifications deleted.',
+      markedReadCount: markedRead.modifiedCount || 0,
+      deletedCount: deleted.deletedCount || 0,
+      unreadCount: 0,
+    });
+  } catch (error) {
+    console.error('Delete all notifications error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
 // @desc    Delete a notification
 // @route   DELETE /api/notifications/:id
 const deleteNotification = async (req, res) => {
@@ -67,9 +91,18 @@ const deleteNotification = async (req, res) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
+    const wasUnread = !notification.isRead;
+    if (wasUnread) {
+      notification.isRead = true;
+      await notification.save();
+    }
     await notification.deleteOne();
 
-    res.json({ success: true, message: 'Notification deleted.' });
+    res.json({
+      success: true,
+      message: 'Notification deleted.',
+      wasUnread,
+    });
   } catch (error) {
     console.error('Delete notification error:', error);
     res.status(500).json({ message: 'Server error.' });
@@ -79,5 +112,6 @@ const deleteNotification = async (req, res) => {
 module.exports = {
   getNotifications,
   markAllRead,
+  deleteAllNotifications,
   deleteNotification,
 };
