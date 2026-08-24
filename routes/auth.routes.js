@@ -7,6 +7,7 @@ const {
   verifyRegisterOtp,
   resendRegistrationOtp,
   login,
+  completeLoginAudit,
   logout,
   verifyEmail,
   forgotPassword,
@@ -16,6 +17,7 @@ const {
   deleteAccount,
 } = require('../controllers/auth.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
+const { uploadImage } = require('../middlewares/upload.middleware');
 
 // Validation rules
 const registerValidation = [
@@ -45,6 +47,7 @@ router.post('/register/verify-otp', verifyRegisterOtp);
 router.post('/otp/resend', resendRegistrationOtp);
 router.post('/register', registerValidation, register);
 router.post('/login', loginValidation, login);
+router.post('/login/complete-audit', uploadImage.single('photo'), completeLoginAudit);
 router.post('/logout', logout);
 router.get('/verify-email/:token', verifyEmail);
 router.post('/forgot-password', forgotPasswordValidation, forgotPassword);

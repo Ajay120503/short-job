@@ -85,7 +85,7 @@ const uploadPostImages = multer({
 });
 
 // Cloudinary upload helper
-const uploadToCloudinary = async (file, folder) => {
+const uploadToCloudinary = async (file, folder, options = {}) => {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
@@ -93,6 +93,7 @@ const uploadToCloudinary = async (file, folder) => {
         resource_type: 'auto',
         quality: 'auto',
         fetch_format: 'auto',
+        ...options,
       },
       (err, result) => {
         if (err) reject(err);

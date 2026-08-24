@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Post = require('../models/Post');
 const JobPost = require('../models/JobPost');
 const Notification = require('../models/Notification');
+const LoginRecord = require('../models/LoginRecord');
 const { getIO, getOnlineUsers } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 
@@ -37,6 +38,33 @@ const getOnlineUserIds = async (req, res) => {
     });
   } catch (error) {
     console.error('Get online users error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
+// @desc    Get logged-in user's own login audit history
+// @route   GET /api/users/me/login-history
+const getMyLoginHistory = async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 50);
+    const skip = (page - 1) * limit;
+
+    const filter = { user: req.user._id };
+    const [records, total] = await Promise.all([
+      LoginRecord.find(filter).sort({ loginAt: -1 }).skip(skip).limit(limit),
+      LoginRecord.countDocuments(filter),
+    ]);
+
+    res.json({
+      success: true,
+      records,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+    });
+  } catch (error) {
+    console.error('Get login history error:', error);
     res.status(500).json({ message: 'Server error.' });
   }
 };
@@ -630,6 +658,7 @@ const getUserBadges = async (req, res) => {
 module.exports = {
   getUserProfile,
   getOnlineUserIds,
+  getMyLoginHistory,
   updateProfile,
   followUser,
   searchUsers,

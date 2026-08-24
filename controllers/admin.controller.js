@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Post = require('../models/Post');
 const JobPost = require('../models/JobPost');
 const Story = require('../models/Story');
+const LoginRecord = require('../models/LoginRecord');
 const Notification = require('../models/Notification');
 const { getIO } = require('../config/socket');
 const {
@@ -564,6 +565,89 @@ const updateAdminSettings = async (req, res) => {
   }
 };
 
+const LOGIN_RECORD_USER_SELECT =
+  'name email phone profilePic badges institutionName address city state isBlocked createdAt verifiedStatus isEmailVerified';
+
+const buildLoginRecordFilter = async (query) => {
+  const { userId, city, from, to, search } = query;
+  const filter = {};
+
+  if (userId) filter.user = userId;
+  if (city) filter['location.city'] = new RegExp(city, 'i');
+  if (from || to) {
+    filter.loginAt = {};
+    if (from) filter.loginAt.$gte = new Date(from);
+    if (to) filter.loginAt.$lte = new Date(to);
+  }
+
+  if (search) {
+    const matchedUsers = await User.find({
+      $or: [
+        { name: new RegExp(search, 'i') },
+        { email: new RegExp(search, 'i') },
+      ],
+    }).select('_id');
+    const ids = matchedUsers.map((user) => user._id);
+    filter.user = userId ? filter.user : { $in: ids };
+  }
+
+  return filter;
+};
+
+// @desc    Get login audit records
+// @route   GET /api/admin/login-records
+const getLoginRecords = async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 100);
+    const filter = await buildLoginRecordFilter(req.query);
+
+    const [records, total] = await Promise.all([
+      LoginRecord.find(filter)
+        .populate('user', LOGIN_RECORD_USER_SELECT)
+        .sort({ loginAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      LoginRecord.countDocuments(filter),
+    ]);
+
+    res.json({ success: true, records, total, page, pages: Math.ceil(total / limit) });
+  } catch (error) {
+    console.error('Get login records error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
+// @desc    Get single login audit record
+// @route   GET /api/admin/login-records/:id
+const getLoginRecordDetail = async (req, res) => {
+  try {
+    const record = await LoginRecord.findById(req.params.id)
+      .populate('user', LOGIN_RECORD_USER_SELECT);
+    if (!record) {
+      return res.status(404).json({ message: 'Login record not found.' });
+    }
+    res.json({ success: true, record });
+  } catch (error) {
+    console.error('Get login record detail error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
+// @desc    Get all login audit records for one user
+// @route   GET /api/admin/login-records/user/:userId
+const getUserLoginRecords = async (req, res) => {
+  try {
+    const records = await LoginRecord.find({ user: req.params.userId })
+      .populate('user', LOGIN_RECORD_USER_SELECT)
+      .sort({ loginAt: -1 });
+    res.json({ success: true, records });
+  } catch (error) {
+    console.error('Get user login records error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserDetail,
@@ -580,4 +664,7 @@ module.exports = {
   rejectContent,
   getAdminSettings,
   updateAdminSettings,
+  getLoginRecords,
+  getLoginRecordDetail,
+  getUserLoginRecords,
 };

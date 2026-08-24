@@ -10,8 +10,12 @@ const JobPost = require('../models/JobPost');
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
 const Notification = require('../models/Notification');
+const LoginRecord = require('../models/LoginRecord');
 const { sendVerificationEmail, sendPasswordResetOTP, sendRegistrationOTP } = require('../utils/email');
 const { getIO } = require('../config/socket');
+const cloudinary = require('../config/cloudinary');
+const { uploadToCloudinary } = require('../middlewares/upload.middleware');
+const { getAdminSettings } = require('../utils/adminSettings');
 
 // Generate JWT Token
 const generateToken = (id) => {
@@ -26,6 +30,81 @@ const generateRefreshToken = (id) => {
     expiresIn: process.env.JWT_REFRESH_EXPIRE || '30d',
   });
 };
+
+const generateLoginAuditToken = (id) => {
+  return jwt.sign({ id, scope: 'login_audit' }, process.env.JWT_SECRET, {
+    expiresIn: '2m',
+  });
+};
+
+const getClientIp = (req) => {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) return forwarded.split(',')[0].trim();
+  return req.headers['x-real-ip'] || req.socket?.remoteAddress || '';
+};
+
+const parseBrowser = (userAgent = '') => {
+  const browser =
+    userAgent.match(/Edg\/([\d.]+)/) ? 'Edge' :
+    userAgent.match(/Chrome\/([\d.]+)/) ? 'Chrome' :
+    userAgent.match(/Firefox\/([\d.]+)/) ? 'Firefox' :
+    userAgent.match(/Version\/([\d.]+).*Safari/) ? 'Safari' :
+    userAgent.match(/OPR\/([\d.]+)/) ? 'Opera' :
+    'Unknown browser';
+
+  const os =
+    userAgent.includes('Windows NT 10') ? 'Windows 10/11' :
+    userAgent.includes('Windows') ? 'Windows' :
+    userAgent.includes('Mac OS X') ? 'macOS' :
+    userAgent.includes('Android') ? 'Android' :
+    userAgent.includes('iPhone') || userAgent.includes('iPad') ? 'iOS' :
+    userAgent.includes('Linux') ? 'Linux' :
+    'Unknown device';
+
+  return `${browser} on ${os}`;
+};
+
+const reverseGeocode = async (lat, lng) => {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return {};
+  try {
+    const url = new URL('https://nominatim.openstreetmap.org/reverse');
+    url.searchParams.set('format', 'jsonv2');
+    url.searchParams.set('lat', String(lat));
+    url.searchParams.set('lon', String(lng));
+    url.searchParams.set('zoom', '10');
+    url.searchParams.set('addressdetails', '1');
+
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'ShortJob Login Audit/1.0',
+        Accept: 'application/json',
+      },
+    });
+    if (!response.ok) return {};
+    const data = await response.json();
+    const address = data.address || {};
+    return {
+      city:
+        address.city ||
+        address.town ||
+        address.village ||
+        address.county ||
+        '',
+      state: address.state || '',
+    };
+  } catch (error) {
+    console.error('Reverse geocode error:', error.message);
+    return {};
+  }
+};
+
+const buildAuthenticatedCloudinaryUrl = (publicId) =>
+  cloudinary.url(publicId, {
+    type: 'authenticated',
+    resource_type: 'image',
+    secure: true,
+    sign_url: true,
+  });
 
 // Set cookies (for web)
 const setTokenCookies = (res, accessToken, refreshToken) => {
@@ -283,6 +362,95 @@ const register = async (req, res) => {
   }
 };
 
+// @desc    Complete mandatory login audit and issue real session
+// @route   POST /api/auth/login/complete-audit
+const completeLoginAudit = async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const tempToken = authHeader.startsWith('Bearer ')
+      ? authHeader.split(' ')[1]
+      : '';
+    if (!tempToken) {
+      return res.status(401).json({ message: 'Audit token is required.' });
+    }
+
+    const decoded = jwt.verify(tempToken, process.env.JWT_SECRET);
+    if (decoded.scope !== 'login_audit') {
+      return res.status(401).json({ message: 'Invalid audit token.' });
+    }
+
+    const settings = await getAdminSettings();
+    if (!settings.loginAuditEnabled) {
+      return res.status(400).json({ message: 'Login audit is not enabled.' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'Login photo is required.' });
+    }
+
+    const lat = Number(req.body.lat);
+    const lng = Number(req.body.lng);
+    const accuracy = Number(req.body.accuracy);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ message: 'Valid location is required.' });
+    }
+
+    const user = await User.findById(decoded.id).select('+password');
+    if (!user || user.isActive === false || user.isBlocked) {
+      return res.status(403).json({ message: 'This account cannot sign in.' });
+    }
+
+    const uploaded = await uploadToCloudinary(req.file, 'shorjob/login-audit', {
+      type: 'authenticated',
+      resource_type: 'image',
+    });
+    const geo = await reverseGeocode(lat, lng);
+    const userAgent = req.headers['user-agent'] || '';
+
+    await LoginRecord.create({
+      user: user._id,
+      photo: {
+        url: buildAuthenticatedCloudinaryUrl(uploaded.public_id),
+        publicId: uploaded.public_id,
+      },
+      location: {
+        lat,
+        lng,
+        city: geo.city,
+        state: geo.state,
+        accuracy: Number.isFinite(accuracy) ? accuracy : undefined,
+      },
+      device: {
+        userAgent,
+        browser: parseBrowser(userAgent),
+        ip: getClientIp(req),
+      },
+    });
+
+    const accessToken = generateToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+    setTokenCookies(res, accessToken, refreshToken);
+
+    const userData = user.toObject();
+    delete userData.password;
+
+    res.json({
+      success: true,
+      message: 'Login successful.',
+      user: userData,
+      accessToken,
+    });
+  } catch (error) {
+    console.error('Complete login audit error:', error);
+    const expired = error.name === 'TokenExpiredError';
+    res.status(expired ? 401 : 500).json({
+      message: expired
+        ? 'Security verification expired. Please sign in again.'
+        : 'Server error during security verification.',
+    });
+  }
+};
+
 // @desc    Login user
 // @route   POST /api/auth/login
 const login = async (req, res) => {
@@ -315,6 +483,20 @@ const login = async (req, res) => {
         error: 'account_suspended',
         message: 'Your account has been suspended.',
         reason: user.blockedReason,
+      });
+    }
+
+    const settings = await getAdminSettings();
+    if (settings.loginAuditEnabled) {
+      const userData = user.toObject();
+      delete userData.password;
+
+      return res.json({
+        success: true,
+        requiresLoginAudit: true,
+        tempToken: generateLoginAuditToken(user._id),
+        user: userData,
+        message: 'Security verification required.',
       });
     }
 
@@ -548,6 +730,7 @@ module.exports = {
   resendRegistrationOtp,
   register,
   login,
+  completeLoginAudit,
   logout,
   verifyEmail,
   forgotPassword,

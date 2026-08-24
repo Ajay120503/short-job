@@ -16,6 +16,9 @@ const {
   rejectContent,
   getAdminSettings,
   updateAdminSettings,
+  getLoginRecords,
+  getLoginRecordDetail,
+  getUserLoginRecords,
 } = require('../controllers/admin.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
 
@@ -41,6 +44,9 @@ router.put('/users/:id/revoke-badge', authMiddleware, adminMiddleware, revokeBad
 router.delete('/users/:id', authMiddleware, adminMiddleware, deleteUser);
 router.get('/settings', authMiddleware, adminMiddleware, getAdminSettings);
 router.put('/settings', authMiddleware, adminMiddleware, updateAdminSettings);
+router.get('/login-records', authMiddleware, adminMiddleware, getLoginRecords);
+router.get('/login-records/user/:userId', authMiddleware, adminMiddleware, getUserLoginRecords);
+router.get('/login-records/:id', authMiddleware, adminMiddleware, getLoginRecordDetail);
 router.get('/queue', authMiddleware, adminMiddleware, getModerationQueue);
 router.get('/content/:type/:id', authMiddleware, adminMiddleware, getContentDetail);
 router.put('/content/:type/:id/run-check', authMiddleware, adminMiddleware, runContentRuleCheck);
