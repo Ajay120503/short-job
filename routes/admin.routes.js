@@ -22,39 +22,28 @@ const {
   deleteLoginRecord,
 } = require('../controllers/admin.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
+const { requireAdmin, requireSuperAdmin } = require('../middlewares/role.middleware');
 
-// Admin middleware to check isAdmin
-const adminMiddleware = (req, res, next) => {
-  const hasTopContributorBadge = req.user?.badges?.some(
-    (badge) => badge.type === 'top_contributor' && badge.isActive !== false
-  );
-  if (req.user && (req.user.isAdmin || hasTopContributorBadge || (req.user.category === 'school' && req.user.verifiedStatus === 'top_contributor'))) {
-    next();
-  } else {
-    return res.status(403).json({ message: 'Access denied. Admin only.' });
-  }
-};
-
-router.get('/users', authMiddleware, adminMiddleware, getAllUsers);
-router.get('/users/:id', authMiddleware, adminMiddleware, getUserDetail);
-router.put('/users/:id/block', authMiddleware, adminMiddleware, blockUser);
-router.put('/users/:id/unblock', authMiddleware, adminMiddleware, unblockUser);
-router.put('/users/:id/notes', authMiddleware, adminMiddleware, updateUserNotes);
-router.put('/users/:id/grant-badge', authMiddleware, adminMiddleware, grantBadge);
-router.put('/users/:id/revoke-badge', authMiddleware, adminMiddleware, revokeBadge);
-router.delete('/users/:id', authMiddleware, adminMiddleware, deleteUser);
-router.get('/settings', authMiddleware, adminMiddleware, getAdminSettings);
-router.put('/settings', authMiddleware, adminMiddleware, updateAdminSettings);
-router.get('/login-records', authMiddleware, adminMiddleware, getLoginRecords);
-router.get('/login-records/user/:userId', authMiddleware, adminMiddleware, getUserLoginRecords);
-router.get('/login-records/:id', authMiddleware, adminMiddleware, getLoginRecordDetail);
-router.delete('/login-records/:id', authMiddleware, adminMiddleware, deleteLoginRecord);
-router.get('/queue', authMiddleware, adminMiddleware, getModerationQueue);
-router.get('/content/:type/:id', authMiddleware, adminMiddleware, getContentDetail);
-router.put('/content/:type/:id/run-check', authMiddleware, adminMiddleware, runContentRuleCheck);
-router.put('/content/:type/:id/approve', authMiddleware, adminMiddleware, approveContent);
-router.put('/content/:type/:id/reject', authMiddleware, adminMiddleware, rejectContent);
-router.put('/queue/:type/:id/approve', authMiddleware, adminMiddleware, approveContent);
-router.put('/queue/:type/:id/reject', authMiddleware, adminMiddleware, rejectContent);
+router.get('/users', authMiddleware, requireAdmin, getAllUsers);
+router.get('/users/:id', authMiddleware, requireAdmin, getUserDetail);
+router.put('/users/:id/block', authMiddleware, requireSuperAdmin, blockUser);
+router.put('/users/:id/unblock', authMiddleware, requireSuperAdmin, unblockUser);
+router.put('/users/:id/notes', authMiddleware, requireAdmin, updateUserNotes);
+router.put('/users/:id/grant-badge', authMiddleware, requireSuperAdmin, grantBadge);
+router.put('/users/:id/revoke-badge', authMiddleware, requireSuperAdmin, revokeBadge);
+router.delete('/users/:id', authMiddleware, requireSuperAdmin, deleteUser);
+router.get('/settings', authMiddleware, requireAdmin, getAdminSettings);
+router.put('/settings', authMiddleware, requireSuperAdmin, updateAdminSettings);
+router.get('/login-records', authMiddleware, requireAdmin, getLoginRecords);
+router.get('/login-records/user/:userId', authMiddleware, requireAdmin, getUserLoginRecords);
+router.get('/login-records/:id', authMiddleware, requireAdmin, getLoginRecordDetail);
+router.delete('/login-records/:id', authMiddleware, requireSuperAdmin, deleteLoginRecord);
+router.get('/queue', authMiddleware, requireAdmin, getModerationQueue);
+router.get('/content/:type/:id', authMiddleware, requireAdmin, getContentDetail);
+router.put('/content/:type/:id/run-check', authMiddleware, requireAdmin, runContentRuleCheck);
+router.put('/content/:type/:id/approve', authMiddleware, requireAdmin, approveContent);
+router.put('/content/:type/:id/reject', authMiddleware, requireAdmin, rejectContent);
+router.put('/queue/:type/:id/approve', authMiddleware, requireAdmin, approveContent);
+router.put('/queue/:type/:id/reject', authMiddleware, requireAdmin, rejectContent);
 
 module.exports = router;

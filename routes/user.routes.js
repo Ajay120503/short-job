@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middlewares/auth.middleware');
 const { optionalAuth } = require('../middlewares/auth.middleware');
+const { requireSuperAdmin } = require('../middlewares/role.middleware');
 const { uploadProfile } = require('../middlewares/upload.middleware');
 const {
   getUserProfile,
@@ -50,7 +51,7 @@ router.put('/:id', authMiddleware, uploadProfile.fields([
 router.post('/:id/follow', authMiddleware, followUser);
 
 // F07 — Verified badge
-router.put('/admin/:id/verify', authMiddleware, verifyUser);
+router.put('/admin/:id/verify', authMiddleware, requireSuperAdmin, verifyUser);
 
 // F09 — Skill endorsements
 router.post('/:id/skills/:skillName/endorse', authMiddleware, endorseSkill);

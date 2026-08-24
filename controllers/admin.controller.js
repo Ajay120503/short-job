@@ -112,6 +112,38 @@ const syncUserTrustStatus = (user) => {
   user.verifiedStatus = 'none';
 };
 
+const isSameUser = (a, b) => a?.toString?.() === b?.toString?.();
+
+const ensureCanMutateUser = async (req, targetUser, action) => {
+  if (!targetUser) {
+    return { allowed: false, status: 404, message: 'User not found.' };
+  }
+
+  if (isSameUser(req.user?._id, targetUser._id) && ['block', 'delete'].includes(action)) {
+    return {
+      allowed: false,
+      status: 400,
+      message: `You cannot ${action} your own admin account.`,
+    };
+  }
+
+  if (targetUser.isSuperAdmin && !isSameUser(req.user?._id, targetUser._id)) {
+    return {
+      allowed: false,
+      status: 403,
+      message: 'Super admin accounts cannot be modified by another admin.',
+    };
+  }
+
+  return { allowed: true };
+};
+
+const respondIfDenied = (res, permission) => {
+  if (permission.allowed) return false;
+  res.status(permission.status).json({ message: permission.message });
+  return true;
+};
+
 // @desc    Get all users (admin)
 // @route   GET /api/admin/users
 const getAllUsers = async (req, res) => {
@@ -164,16 +196,19 @@ const getUserDetail = async (req, res) => {
 const blockUser = async (req, res) => {
   try {
     const body = req.body || {};
-    const user = await User.findByIdAndUpdate(req.params.id, {
-      isBlocked: true,
-      blockedAt: new Date(),
-      blockedReason: body.reason || 'Violated community guidelines',
-      adminNotes: body.notes || '',
-    }, { returnDocument: 'after' });
-
+    const user = await User.findById(req.params.id);
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
+
+    const permission = await ensureCanMutateUser(req, user, 'block');
+    if (respondIfDenied(res, permission)) return;
+
+    user.isBlocked = true;
+    user.blockedAt = new Date();
+    user.blockedReason = body.reason || 'Violated community guidelines';
+    user.adminNotes = body.notes || user.adminNotes || '';
+    await user.save();
 
     res.json({ success: true, user });
   } catch (error) {
@@ -186,15 +221,18 @@ const blockUser = async (req, res) => {
 // @route   PUT /api/admin/users/:id/unblock
 const unblockUser = async (req, res) => {
   try {
-    const user = await User.findByIdAndUpdate(req.params.id, {
-      isBlocked: false,
-      blockedAt: null,
-      blockedReason: null,
-    }, { returnDocument: 'after' });
-
+    const user = await User.findById(req.params.id);
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
+
+    const permission = await ensureCanMutateUser(req, user, 'unblock');
+    if (respondIfDenied(res, permission)) return;
+
+    user.isBlocked = false;
+    user.blockedAt = null;
+    user.blockedReason = null;
+    await user.save();
 
     res.json({ success: true, user });
   } catch (error) {
@@ -232,6 +270,10 @@ const deleteUser = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
+
+    const permission = await ensureCanMutateUser(req, user, 'delete');
+    if (respondIfDenied(res, permission)) return;
+
     const userJobIds = await JobPost.find({ postedBy: user._id }).distinct('_id');
     const conversationIds = await Conversation.find({ participants: user._id }).distinct('_id');
     const assets = await collectUserCloudinaryAssets(user._id);
@@ -270,6 +312,9 @@ const grantBadge = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
+
+    const permission = await ensureCanMutateUser(req, user, 'grant badge to');
+    if (respondIfDenied(res, permission)) return;
 
     // Check if badge type is valid
     const validBadges = [
@@ -322,6 +367,9 @@ const revokeBadge = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
+
+    const permission = await ensureCanMutateUser(req, user, 'revoke badge from');
+    if (respondIfDenied(res, permission)) return;
 
     const badgeIndex = user.badges.findIndex(
       (b) => b.type === badgeType && b.isActive
