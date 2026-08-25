@@ -409,6 +409,17 @@ const completeLoginAudit = async (req, res) => {
       return res.status(400).json({ message: 'Login photo is required.' });
     }
 
+    const faceDetected =
+      req.body.faceDetected === true || req.body.faceDetected === 'true';
+    const faceCount = Number(req.body.faceCount);
+    const faceConfidence = Number(req.body.faceConfidence);
+    const faceDetector = String(req.body.faceDetector || '').trim();
+    if (!faceDetected || !Number.isFinite(faceCount) || faceCount < 1) {
+      return res.status(400).json({
+        message: 'A clear face capture is required before login can continue.',
+      });
+    }
+
     const lat = Number(req.body.lat);
     const lng = Number(req.body.lng);
     const accuracy = Number(req.body.accuracy);
@@ -446,6 +457,12 @@ const completeLoginAudit = async (req, res) => {
           userAgent,
           browser: parseBrowser(userAgent),
           ip: getClientIp(req),
+        },
+        faceDetection: {
+          detected: true,
+          count: faceCount,
+          detector: faceDetector || 'client-face-gate',
+          confidence: Number.isFinite(faceConfidence) ? faceConfidence : undefined,
         },
         auditTokenId: decoded.jti,
       });

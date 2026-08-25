@@ -23,6 +23,12 @@ const loginRecordSchema = new mongoose.Schema({
     browser: String,
     ip: String,
   },
+  faceDetection: {
+    detected: { type: Boolean, default: false },
+    count: { type: Number, default: 0 },
+    detector: String,
+    confidence: Number,
+  },
   auditTokenId: { type: String, index: true, unique: true, sparse: true },
   loginAt: { type: Date, default: Date.now },
 });
