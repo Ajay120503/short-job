@@ -421,7 +421,7 @@ const getApplicants = async (req, res) => {
     const applications = await Application.find(query)
       .populate(
         'applicant',
-        'name profilePic skills qualifications email educationLevel city state bio age experience subject profession institutionName linkedinUrl resumeUrl interests openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant'
+        'name profilePic skills qualifications email phone educationLevel city state bio age experience subject profession currentPosition currentCompany institutionName linkedinUrl resumeUrl interests openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant'
       )
       .sort({ createdAt: -1 });
 
