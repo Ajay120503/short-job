@@ -18,6 +18,23 @@ const hasActiveBadge = (user, badgeType) =>
 
 const canUseOpportunityStatus = (user) => Boolean(user);
 
+const calculateAgeFromDate = (dateValue) => {
+  if (!dateValue) return undefined;
+  const birthDate = new Date(dateValue);
+  if (Number.isNaN(birthDate.getTime()) || birthDate > new Date()) return undefined;
+
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (
+    monthDiff < 0 ||
+    (monthDiff === 0 && today.getDate() < birthDate.getDate())
+  ) {
+    age -= 1;
+  }
+  return Math.max(age, 0);
+};
+
 // @desc    Get online user IDs for global presence indicators
 // @route   GET /api/users/online
 const getOnlineUserIds = async (req, res) => {
@@ -241,6 +258,25 @@ const updateProfile = async (req, res) => {
           updates[field] = value;
         }
       }
+    }
+
+    if (updates.dateOfBirth === '') {
+      updates.dateOfBirth = undefined;
+      updates.age = undefined;
+    } else if (updates.dateOfBirth) {
+      const calculatedAge = calculateAgeFromDate(updates.dateOfBirth);
+      if (calculatedAge === undefined || calculatedAge > 120) {
+        return res.status(400).json({ message: 'Please provide a valid date of birth.' });
+      }
+      updates.age = calculatedAge;
+    } else if (updates.age === '') {
+      updates.age = undefined;
+    } else if (updates.age !== undefined) {
+      const age = Number(updates.age);
+      if (!Number.isFinite(age) || age < 0 || age > 120) {
+        return res.status(400).json({ message: 'Please provide a valid age.' });
+      }
+      updates.age = age;
     }
 
     const oldProfilePicPublicId = req.user.profilePic?.publicId;
