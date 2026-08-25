@@ -46,6 +46,17 @@ const getOnlineUserIds = async (req, res) => {
 // @route   GET /api/users/me/login-history
 const getMyLoginHistory = async (req, res) => {
   try {
+    if (req.user.loginAuditEnabled === false) {
+      return res.json({
+        success: true,
+        loginAuditEnabled: false,
+        records: [],
+        total: 0,
+        page: 1,
+        pages: 0,
+      });
+    }
+
     const page = Math.max(parseInt(req.query.page) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 50);
     const skip = (page - 1) * limit;
@@ -90,6 +101,36 @@ const deleteMyLoginRecord = async (req, res) => {
     res.json({ success: true, message: 'Login record deleted.' });
   } catch (error) {
     console.error('Delete login record error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
+// @desc    Toggle logged-in user's login audit preference
+// @route   PATCH /api/users/me/login-audit
+const updateMyLoginAuditPreference = async (req, res) => {
+  try {
+    const loginAuditEnabled =
+      req.body.loginAuditEnabled === true || req.body.loginAuditEnabled === 'true';
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { loginAuditEnabled },
+      {
+        returnDocument: 'after',
+        runValidators: true,
+      }
+    ).select('-password -verificationToken -verificationTokenExpires -resetPasswordToken -resetPasswordExpires -otp');
+
+    res.json({
+      success: true,
+      user,
+      loginAuditEnabled: user.loginAuditEnabled,
+      message: user.loginAuditEnabled
+        ? 'Login audit enabled for your account.'
+        : 'Login audit disabled for your account.',
+    });
+  } catch (error) {
+    console.error('Update login audit preference error:', error);
     res.status(500).json({ message: 'Server error.' });
   }
 };
@@ -158,7 +199,7 @@ const updateProfile = async (req, res) => {
       'address', 'city', 'state',
       'linkedinUrl', 'profession', 'isCurrentlyWorking',
       'currentPosition', 'currentCompany', 'previousWork',
-      'profileThemeVariant', 'showOnlineStatus',
+      'profileThemeVariant', 'showOnlineStatus', 'loginAuditEnabled',
     ];
 
     const arrayFields = ['skills', 'qualifications', 'interests'];
@@ -182,7 +223,9 @@ const updateProfile = async (req, res) => {
           }
         }
         updates[field] =
-          field === 'isCurrentlyWorking' || field === 'showOnlineStatus'
+          field === 'isCurrentlyWorking' ||
+          field === 'showOnlineStatus' ||
+          field === 'loginAuditEnabled'
             ? req.body[field] === true || req.body[field] === 'true'
             : req.body[field];
       }
@@ -708,6 +751,7 @@ module.exports = {
   getOnlineUserIds,
   getMyLoginHistory,
   deleteMyLoginRecord,
+  updateMyLoginAuditPreference,
   updateProfile,
   followUser,
   searchUsers,

@@ -432,6 +432,12 @@ const completeLoginAudit = async (req, res) => {
       return res.status(403).json({ message: 'This account cannot sign in.' });
     }
 
+    if (user.loginAuditEnabled === false) {
+      return res.status(400).json({
+        message: 'Login audit is disabled for this account. Please sign in again.',
+      });
+    }
+
     const uploaded = await uploadToCloudinary(req.file, 'shorjob/login-audit', {
       type: 'authenticated',
       resource_type: 'image',
@@ -551,7 +557,7 @@ const login = async (req, res) => {
     }
 
     const settings = await getAdminSettings();
-    if (settings.loginAuditEnabled) {
+    if (settings.loginAuditEnabled && user.loginAuditEnabled !== false) {
       const userData = user.toObject();
       delete userData.password;
 

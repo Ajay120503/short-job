@@ -6,6 +6,7 @@ const {
   blockUser,
   unblockUser,
   updateUserNotes,
+  updateUserLoginAudit,
   deleteUser,
   grantBadge,
   revokeBadge,
@@ -31,6 +32,7 @@ router.get('/users/:id', authMiddleware, requireAdmin, getUserDetail);
 router.put('/users/:id/block', authMiddleware, requireSuperAdmin, blockUser);
 router.put('/users/:id/unblock', authMiddleware, requireSuperAdmin, unblockUser);
 router.put('/users/:id/notes', authMiddleware, requireAdmin, updateUserNotes);
+router.put('/users/:id/login-audit', authMiddleware, requireSuperAdmin, updateUserLoginAudit);
 router.put('/users/:id/grant-badge', authMiddleware, requireSuperAdmin, grantBadge);
 router.put('/users/:id/revoke-badge', authMiddleware, requireSuperAdmin, revokeBadge);
 router.put('/users/:id/make-admin', authMiddleware, requireSuperAdmin, makeAdmin);

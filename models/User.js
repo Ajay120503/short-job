@@ -187,6 +187,7 @@ const userSchema = new mongoose.Schema(
     }],
     openToOpportunities: { type: Boolean, default: false },
     showOnlineStatus: { type: Boolean, default: true },
+    loginAuditEnabled: { type: Boolean, default: true },
     profileThemeVariant: {
       type: String,
       enum: ['teal', 'coral', 'emerald', 'amber', 'indigo', 'sky', 'deep-teal', 'rose', 'slate', 'violet', 'pink', 'premium'],

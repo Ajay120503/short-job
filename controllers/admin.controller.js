@@ -307,6 +307,35 @@ const updateUserNotes = async (req, res) => {
   }
 };
 
+// @desc    Update per-user login audit preference
+// @route   PUT /api/admin/users/:id/login-audit
+const updateUserLoginAudit = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const permission = await ensureCanMutateUser(req, user, 'login audit');
+    if (respondIfDenied(res, permission)) return;
+
+    user.loginAuditEnabled =
+      req.body.loginAuditEnabled === true || req.body.loginAuditEnabled === 'true';
+    await user.save();
+
+    res.json({
+      success: true,
+      user,
+      message: user.loginAuditEnabled
+        ? 'Login audit enabled for this user.'
+        : 'Login audit disabled for this user.',
+    });
+  } catch (error) {
+    console.error('Update user login audit error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
 // @desc    Delete user (admin)
 // @route   DELETE /api/admin/users/:id
 const deleteUser = async (req, res) => {
@@ -833,6 +862,7 @@ module.exports = {
   blockUser,
   unblockUser,
   updateUserNotes,
+  updateUserLoginAudit,
   deleteUser,
   grantBadge,
   revokeBadge,
