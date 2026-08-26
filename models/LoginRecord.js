@@ -28,6 +28,7 @@ const loginRecordSchema = new mongoose.Schema({
     count: { type: Number, default: 0 },
     detector: String,
     confidence: Number,
+    validation: String,
   },
   auditTokenId: { type: String, index: true, unique: true, sparse: true },
   loginAt: { type: Date, default: Date.now },

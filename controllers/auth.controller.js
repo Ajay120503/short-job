@@ -414,9 +414,16 @@ const completeLoginAudit = async (req, res) => {
     const faceCount = Number(req.body.faceCount);
     const faceConfidence = Number(req.body.faceConfidence);
     const faceDetector = String(req.body.faceDetector || '').trim();
-    if (!faceDetected || !Number.isFinite(faceCount) || faceCount < 1) {
+    const faceValidation = String(req.body.faceValidation || '').trim();
+    const acceptedFaceValidation = ['full-face', 'fallback-full-face'];
+    if (
+      !faceDetected ||
+      !Number.isFinite(faceCount) ||
+      faceCount < 1 ||
+      !acceptedFaceValidation.includes(faceValidation)
+    ) {
       return res.status(400).json({
-        message: 'A clear face capture is required before login can continue.',
+        message: 'A complete visible face capture is required before login can continue.',
       });
     }
 
@@ -469,6 +476,7 @@ const completeLoginAudit = async (req, res) => {
           count: faceCount,
           detector: faceDetector || 'client-face-gate',
           confidence: Number.isFinite(faceConfidence) ? faceConfidence : undefined,
+          validation: faceValidation,
         },
         auditTokenId: decoded.jti,
       });
