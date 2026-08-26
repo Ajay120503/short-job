@@ -212,7 +212,7 @@ const updateProfile = async (req, res) => {
 
     const allowedFields = [
       'name', 'bio', 'age', 'dateOfBirth', 'educationLevel',
-      'institutionName', 'subject', 'experience',
+      'institutionName', 'institutionType', 'subject', 'experience',
       'address', 'city', 'state',
       'linkedinUrl', 'profession', 'isCurrentlyWorking',
       'currentPosition', 'currentCompany', 'previousWork',
