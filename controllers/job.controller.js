@@ -476,7 +476,14 @@ const updateApplicationStatus = async (req, res) => {
       });
     } catch (socketErr) {}
 
-    res.json({ success: true, application });
+    const populatedApplication = await Application.findById(application._id)
+      .populate(
+        'applicant',
+        'name profilePic skills qualifications email phone educationLevel city state bio age experience subject profession currentPosition currentCompany institutionName linkedinUrl resumeUrl interests openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant'
+      )
+      .populate('jobPost', 'postedBy title');
+
+    res.json({ success: true, application: populatedApplication });
   } catch (error) {
     console.error('Update application status error:', error);
     res.status(500).json({ message: 'Server error.' });
