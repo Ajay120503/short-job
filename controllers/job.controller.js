@@ -20,6 +20,101 @@ const canViewJob = (job, user) => {
   return postedBy?.toString?.() === user._id.toString();
 };
 
+const normalizeMatchText = (value = '') =>
+  String(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9+#.\s-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const toUniqueTerms = (values = []) => {
+  const items = Array.isArray(values) ? values : [values];
+  return [
+    ...new Set(
+      items
+        .flatMap((value) => String(value || '').split(/[,;\n|•]+/))
+        .map(normalizeMatchText)
+        .filter((value) => value.length > 1)
+    ),
+  ];
+};
+
+const termMatchStrength = (source, target) => {
+  if (!source || !target) return 0;
+  if (source === target) return 1;
+  if (source.includes(target) || target.includes(source)) return 0.72;
+
+  const sourceTokens = new Set(source.split(/\s+/).filter((token) => token.length > 2));
+  const targetTokens = target.split(/\s+/).filter((token) => token.length > 2);
+  if (!sourceTokens.size || !targetTokens.length) return 0;
+
+  const overlap = targetTokens.filter((token) => sourceTokens.has(token)).length;
+  return overlap ? Math.min(0.58, overlap / targetTokens.length) : 0;
+};
+
+const bestTermMatch = (target, sources) =>
+  sources.reduce((best, source) => Math.max(best, termMatchStrength(source, target)), 0);
+
+const scoreTermGroup = (targets, sources, maxScore) => {
+  if (!targets.length || !sources.length) return 0;
+  const totalStrength = targets.reduce(
+    (sum, target) => sum + bestTermMatch(target, sources),
+    0
+  );
+  return Math.min(maxScore, (totalStrength / targets.length) * maxScore);
+};
+
+const countContentHits = (content, terms) =>
+  terms.filter((term) => term.length > 2 && content.includes(term)).length;
+
+const scoreLocationMatch = (job, user) => {
+  if (job.location === 'remote') return 10;
+  if (job.location === 'hybrid') return user.city || user.state ? 8 : 6;
+
+  const userCity = normalizeMatchText(user.city);
+  const userState = normalizeMatchText(user.state);
+  const jobLocationText = normalizeMatchText(
+    [
+      job.workplaceName,
+      job.workplaceAddress,
+      job.workplaceCity,
+      job.workplaceState,
+      job.workplaceCountry,
+      job.institutionName,
+      job.location,
+      job.description,
+    ].filter(Boolean).join(' ')
+  );
+
+  if (userCity && jobLocationText.includes(userCity)) return 10;
+  if (userState && jobLocationText.includes(userState)) return 7;
+  return userCity || userState ? 3 : 1;
+};
+
+const scoreDeadlineHealth = (deadline) => {
+  if (!deadline) return 1;
+  const daysLeft = Math.ceil((new Date(deadline).getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+  if (daysLeft < 0) return 0;
+  if (daysLeft <= 3) return 2;
+  if (daysLeft <= 14) return 5;
+  return 4;
+};
+
+const parseCoordinate = (value) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const getJobCoordinatesFromBody = (body) => {
+  const lat = parseCoordinate(body.coordinateLat ?? body.lat ?? body.coordinates?.lat);
+  const lng = parseCoordinate(body.coordinateLng ?? body.lng ?? body.coordinates?.lng);
+  if (lat === undefined && lng === undefined) return undefined;
+  if (lat === undefined || lng === undefined) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+};
+
 // @desc    Get all active jobs
 // @route   GET /api/jobs
 const getJobs = async (req, res) => {
@@ -91,10 +186,17 @@ const createJob = async (req, res) => {
       title, description, institutionName, roleType, isPaid,
       stipend, currency, location, requiredQualifications, skillsRequired,
       deadline, contactEmail, maxApplicants,
+      workplaceName, workplaceAddress, workplaceCity, workplaceState,
+      workplaceCountry,
     } = req.body;
 
     if (!title || !description || !deadline || !contactEmail) {
       return res.status(400).json({ message: 'Title, description, deadline, and contact email are required.' });
+    }
+
+    const coordinates = getJobCoordinatesFromBody(req.body);
+    if (coordinates === null) {
+      return res.status(400).json({ message: 'Please provide valid workplace coordinates.' });
     }
 
     const moderationState = await getInitialModerationState('job');
@@ -110,6 +212,11 @@ const createJob = async (req, res) => {
       currency: currency || 'INR',
       stipend: stipend || 0,
       location: location || 'onsite',
+      workplaceName: workplaceName || '',
+      workplaceAddress: workplaceAddress || '',
+      workplaceCity: workplaceCity || '',
+      workplaceState: workplaceState || '',
+      workplaceCountry: workplaceCountry || '',
       requiredQualifications: requiredQualifications || '',
       skillsRequired: skillsRequired ? (typeof skillsRequired === 'string' ? skillsRequired.split(',').map(s => s.trim()) : skillsRequired) : [],
       deadline: new Date(deadline),
@@ -126,6 +233,9 @@ const createJob = async (req, res) => {
         url: result.secure_url,
         publicId: result.public_id,
       };
+    }
+    if (coordinates) {
+      jobData.coordinates = coordinates;
     }
 
     const moderatedState = await applyInitialRuleModeration(jobData, 'job', moderationState);
@@ -216,9 +326,11 @@ const updateJob = async (req, res) => {
     }
 
     const allowedFields = [
-      'title', 'description', 'roleType', 'isPaid', 'stipend',
+      'title', 'description', 'institutionName', 'roleType', 'isPaid', 'stipend', 'currency',
       'location', 'requiredQualifications', 'skillsRequired',
       'deadline', 'contactEmail', 'maxApplicants', 'isActive',
+      'workplaceName', 'workplaceAddress', 'workplaceCity',
+      'workplaceState', 'workplaceCountry',
     ];
 
     for (const field of allowedFields) {
@@ -229,6 +341,16 @@ const updateJob = async (req, res) => {
 
     if (req.body.skillsRequired && typeof req.body.skillsRequired === 'string') {
       job.skillsRequired = req.body.skillsRequired.split(',').map(s => s.trim());
+    }
+
+    const coordinates = getJobCoordinatesFromBody(req.body);
+    if (coordinates === null) {
+      return res.status(400).json({ message: 'Please provide valid workplace coordinates.' });
+    }
+    if (coordinates) {
+      job.coordinates = coordinates;
+    } else if (req.body.clearCoordinates === 'true' || req.body.clearCoordinates === true) {
+      job.coordinates = undefined;
     }
 
     // If a new image was uploaded, replace the old one on Cloudinary
@@ -504,7 +626,7 @@ const getMyApplications = async (req, res) => {
     const applications = await Application.find(query)
       .populate({
         path: 'jobPost',
-        select: 'title institutionName location roleType isPaid stipend deadline',
+        select: 'title institutionName location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates roleType isPaid stipend deadline',
         populate: {
           path: 'postedBy',
           select: 'name profilePic openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant',
@@ -557,29 +679,68 @@ const getMatchedJobs = async (req, res) => {
     const jobs = await JobPost.find({ isActive: true, status: 'approved' })
       .populate('postedBy', 'name profilePic role category institutionName institutionPic openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
 
-    const studentSkills = (student.skills || []).map(s => s.toLowerCase().trim());
-    const studentQualifications = (student.qualifications || []).map(q => q.toLowerCase().trim());
+    const userSkills = toUniqueTerms(student.skills);
+    const userQualifications = toUniqueTerms([
+      ...(student.qualifications || []),
+      student.educationLevel,
+      student.profession,
+      student.currentPosition,
+      student.currentCompany,
+      student.previousWork,
+    ]);
+    const userInterests = toUniqueTerms(student.interests);
+    const profileTerms = toUniqueTerms([
+      ...userSkills,
+      ...userQualifications,
+      ...userInterests,
+      student.subject,
+      student.bio,
+    ]);
 
     const scored = jobs.map(job => {
-      const jobSkills = (job.skillsRequired || []).map(s => s.toLowerCase().trim());
-      const matched = studentSkills.filter(s => jobSkills.includes(s));
-      const missing = jobSkills.filter(s => !studentSkills.includes(s));
+      const jobSkills = toUniqueTerms(job.skillsRequired);
+      const jobQualifications = toUniqueTerms(job.requiredQualifications);
+      const contentText = normalizeMatchText(
+        [
+          job.title,
+          job.description,
+          job.institutionName,
+          job.roleType,
+          job.requiredQualifications,
+          ...(job.skillsRequired || []),
+        ].join(' ')
+      );
+      const matchedSkills = jobSkills.filter((skill) => bestTermMatch(skill, userSkills) >= 0.72);
+      const missingSkills = jobSkills.filter((skill) => bestTermMatch(skill, userSkills) < 0.58);
 
       const skillScore = jobSkills.length
-        ? (matched.length / jobSkills.length) * 60 : 0;
-
-      const reqQuals = job.requiredQualifications
-        ? job.requiredQualifications.split(',').map(q => q.trim().toLowerCase())
-        : [];
-      const eduScore = reqQuals.some(q => studentQualifications.some(sq => sq.includes(q) || q.includes(sq))) ? 30 : 0;
-
-      const locScore = job.location === 'onsite' && student.city ? 10 : 5;
+        ? scoreTermGroup(jobSkills, userSkills, 45)
+        : Math.min(18, countContentHits(contentText, userSkills) * 6);
+      const qualificationScore = jobQualifications.length
+        ? scoreTermGroup(jobQualifications, userQualifications, 25)
+        : Math.min(10, countContentHits(contentText, userQualifications) * 3);
+      const contentScore = Math.min(15, countContentHits(contentText, profileTerms) * 2.5);
+      const locationScore = scoreLocationMatch(job, student);
+      const deadlineScore = scoreDeadlineHealth(job.deadline);
+      const paidScore = job.isPaid ? 2 : 0;
+      const totalScore = Math.min(
+        100,
+        skillScore + qualificationScore + contentScore + locationScore + deadlineScore + paidScore
+      );
 
       return {
         job,
-        score: Math.round(skillScore + eduScore + locScore),
-        matchedSkills: matched,
-        missingSkills: missing,
+        score: Math.round(totalScore),
+        matchedSkills,
+        missingSkills,
+        scoreBreakdown: {
+          skills: Math.round(skillScore),
+          qualifications: Math.round(qualificationScore),
+          content: Math.round(contentScore),
+          location: Math.round(locationScore),
+          deadline: Math.round(deadlineScore),
+          paid: paidScore,
+        },
       };
     });
 
@@ -615,7 +776,7 @@ const getJobsMap = async (req, res) => {
     let query = { isActive: true, status: 'approved' };
 
     const jobs = await JobPost.find(query)
-      .select('title institutionName institutionLogo isPaid roleType coordinates location postedBy')
+      .select('title institutionName institutionLogo isPaid roleType coordinates location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry postedBy')
       .populate('postedBy', 'name institutionName city state');
 
     // Filter by city/state if provided (from user profile or query params)
@@ -623,8 +784,10 @@ const getJobsMap = async (req, res) => {
     if (city || state) {
       filtered = jobs.filter(job => {
         const poster = job.postedBy;
-        const cityMatch = city ? (poster?.city?.toLowerCase() === city.toLowerCase()) : true;
-        const stateMatch = state ? (poster?.state?.toLowerCase() === state.toLowerCase()) : true;
+        const jobCity = job.workplaceCity || poster?.city || '';
+        const jobState = job.workplaceState || poster?.state || '';
+        const cityMatch = city ? (jobCity.toLowerCase() === city.toLowerCase()) : true;
+        const stateMatch = state ? (jobState.toLowerCase() === state.toLowerCase()) : true;
         return cityMatch && stateMatch;
       });
     }

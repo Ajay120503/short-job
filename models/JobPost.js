@@ -50,6 +50,31 @@ const jobPostSchema = new mongoose.Schema(
       enum: ['onsite', 'remote', 'hybrid'],
       default: 'onsite',
     },
+    workplaceName: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    workplaceAddress: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    workplaceCity: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    workplaceState: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    workplaceCountry: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     requiredQualifications: {
       type: String,
       default: '',
@@ -128,6 +153,7 @@ jobPostSchema.index({ title: 'text', description: 'text', skillsRequired: 'text'
 jobPostSchema.index({ postedBy: 1, createdAt: -1 });
 jobPostSchema.index({ isActive: 1, deadline: 1 });
 jobPostSchema.index({ location: 1, isPaid: 1 });
+jobPostSchema.index({ workplaceCity: 1, workplaceState: 1 });
 jobPostSchema.index({ status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('JobPost', jobPostSchema);
