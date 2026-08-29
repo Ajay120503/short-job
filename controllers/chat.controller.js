@@ -76,7 +76,7 @@ const getConversations = async (req, res) => {
     const conversations = await Conversation.find({
       participants: req.user._id,
     })
-      .populate('participants', 'name profilePic role openToOpportunities profileThemeVariant showOnlineStatus')
+      .populate('participants', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant showOnlineStatus')
       .populate('lastMessageSender', 'name')
       .sort({ updatedAt: -1 });
 
@@ -153,7 +153,7 @@ const getMessages = async (req, res) => {
 
     const messageFilter = getVisibleMessageFilter(conversation, req.user._id);
     const messages = await Message.find(messageFilter)
-      .populate('sender', 'name profilePic openToOpportunities profileThemeVariant')
+      .populate('sender', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant showOnlineStatus')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -211,7 +211,7 @@ const createConversation = async (req, res) => {
         ],
       })
         .sort({ updatedAt: -1 })
-        .populate('participants', 'name profilePic role openToOpportunities profileThemeVariant showOnlineStatus');
+        .populate('participants', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant showOnlineStatus');
 
       const existingConversation = existingConversations.find((item) =>
         hasExactlyParticipants(item, participantIds)
@@ -236,7 +236,7 @@ const createConversation = async (req, res) => {
       });
 
       return Conversation.findById(created._id)
-        .populate('participants', 'name profilePic role openToOpportunities profileThemeVariant showOnlineStatus');
+        .populate('participants', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant showOnlineStatus');
     });
 
     res.status(201).json({ success: true, conversation });
@@ -309,7 +309,7 @@ const sendMessage = async (req, res) => {
     await conversation.save();
 
     const populatedMessage = await Message.findById(message._id)
-      .populate('sender', 'name profilePic openToOpportunities profileThemeVariant');
+      .populate('sender', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant showOnlineStatus');
 
     // Emit socket events
     try {
@@ -466,7 +466,7 @@ const updateMessage = async (req, res) => {
     await message.save();
 
     const populatedMessage = await Message.findById(message._id)
-      .populate('sender', 'name profilePic openToOpportunities profileThemeVariant');
+      .populate('sender', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant showOnlineStatus');
 
     // Emit socket event for real-time update
     try {

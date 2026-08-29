@@ -39,6 +39,17 @@ const toUniqueTerms = (values = []) => {
   ];
 };
 
+const normalizeListInput = (value = []) => {
+  const items = Array.isArray(value) ? value : String(value || '').split(',');
+  return [
+    ...new Set(
+      items
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+    ),
+  ];
+};
+
 const termMatchStrength = (source, target) => {
   if (!source || !target) return 0;
   if (source === target) return 1;
@@ -218,7 +229,7 @@ const createJob = async (req, res) => {
       workplaceState: workplaceState || '',
       workplaceCountry: workplaceCountry || '',
       requiredQualifications: requiredQualifications || '',
-      skillsRequired: skillsRequired ? (typeof skillsRequired === 'string' ? skillsRequired.split(',').map(s => s.trim()) : skillsRequired) : [],
+      skillsRequired: normalizeListInput(skillsRequired),
       deadline: new Date(deadline),
       contactEmail,
       maxApplicants: maxApplicants || 0,
@@ -339,8 +350,8 @@ const updateJob = async (req, res) => {
       }
     }
 
-    if (req.body.skillsRequired && typeof req.body.skillsRequired === 'string') {
-      job.skillsRequired = req.body.skillsRequired.split(',').map(s => s.trim());
+    if (req.body.skillsRequired !== undefined) {
+      job.skillsRequired = normalizeListInput(req.body.skillsRequired);
     }
 
     const coordinates = getJobCoordinatesFromBody(req.body);
