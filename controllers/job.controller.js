@@ -676,7 +676,11 @@ const getMatchedJobs = async (req, res) => {
       return res.status(403).json({ message: 'This account cannot use matched jobs.' });
     }
 
-    const jobs = await JobPost.find({ isActive: true, status: 'approved' })
+    const jobs = await JobPost.find({
+      isActive: true,
+      status: 'approved',
+      postedBy: { $ne: req.user._id },
+    })
       .populate('postedBy', 'name profilePic role category institutionName institutionPic openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
 
     const userSkills = toUniqueTerms(student.skills);
