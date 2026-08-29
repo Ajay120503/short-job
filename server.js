@@ -126,7 +126,7 @@ const runAutoModerationPass = async () => {
 
 const cleanupExpiredLoginRecords = async () => {
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const records = await LoginRecord.find({ loginAt: { $lte: cutoff } }).limit(100);
+  const records = await LoginRecord.find({ userSeenAt: { $lte: cutoff } }).limit(100);
 
   for (const record of records) {
     try {
@@ -137,6 +137,26 @@ const cleanupExpiredLoginRecords = async () => {
     } catch (error) {
       console.error(`Login record cleanup failed for ${record._id}:`, error.message);
     }
+  }
+};
+
+const removeLegacyLoginRecordTtlIndex = async () => {
+  try {
+    const indexes = await LoginRecord.collection.indexes();
+    const legacyTtlIndex = indexes.find(
+      (index) =>
+        index.expireAfterSeconds &&
+        index.key &&
+        Object.keys(index.key).length === 1 &&
+        index.key.loginAt === 1
+    );
+
+    if (legacyTtlIndex?.name) {
+      await LoginRecord.collection.dropIndex(legacyTtlIndex.name);
+      console.log(`Removed legacy login record TTL index: ${legacyTtlIndex.name}`);
+    }
+  } catch (error) {
+    console.error('Legacy login record TTL cleanup failed:', error.message);
   }
 };
 
@@ -291,6 +311,7 @@ const startServer = async () => {
     // Connect to database
     await connectDB();
     console.log('Database connected successfully');
+    await removeLegacyLoginRecordTtlIndex();
 
     server.listen(PORT, () => {
       console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);

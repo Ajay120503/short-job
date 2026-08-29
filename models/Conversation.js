@@ -30,6 +30,16 @@ const conversationSchema = new mongoose.Schema(
       of: Number,
       default: {},
     },
+    clearedAtBy: {
+      type: Map,
+      of: Date,
+      default: {},
+    },
+    deletedAtBy: {
+      type: Map,
+      of: Date,
+      default: {},
+    },
   },
   {
     timestamps: true,

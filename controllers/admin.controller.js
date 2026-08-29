@@ -814,6 +814,10 @@ const getLoginRecordDetail = async (req, res) => {
     if (!record) {
       return res.status(404).json({ message: 'Login record not found.' });
     }
+    if (!record.adminSeenAt) {
+      record.adminSeenAt = new Date();
+      await record.save();
+    }
     res.json({ success: true, record });
   } catch (error) {
     console.error('Get login record detail error:', error);

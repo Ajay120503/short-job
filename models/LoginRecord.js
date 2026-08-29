@@ -32,10 +32,12 @@ const loginRecordSchema = new mongoose.Schema({
   },
   auditTokenId: { type: String, index: true, unique: true, sparse: true },
   loginAt: { type: Date, default: Date.now },
+  userSeenAt: { type: Date },
+  adminSeenAt: { type: Date },
 });
 
 loginRecordSchema.index({ user: 1, loginAt: -1 });
 loginRecordSchema.index({ 'location.city': 1 });
-loginRecordSchema.index({ loginAt: 1 }, { expireAfterSeconds: 24 * 60 * 60 });
+loginRecordSchema.index({ userSeenAt: 1 });
 
 module.exports = mongoose.model('LoginRecord', loginRecordSchema);

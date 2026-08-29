@@ -42,6 +42,33 @@ const normalizeUnreadCounts = (conversation) => {
   return unreadCounts;
 };
 
+const getMapDateValue = (mapValue, key) => {
+  if (!mapValue) return null;
+  const value =
+    typeof mapValue.get === 'function'
+      ? mapValue.get(key)
+      : mapValue[key];
+  return value ? new Date(value) : null;
+};
+
+const getConversationVisibleAfter = (conversation, userId) => {
+  const key = userId.toString();
+  const clearedAt = getMapDateValue(conversation.clearedAtBy, key);
+  const deletedAt = getMapDateValue(conversation.deletedAtBy, key);
+  const dates = [clearedAt, deletedAt].filter((date) => date && !Number.isNaN(date.getTime()));
+  if (!dates.length) return null;
+  return new Date(Math.max(...dates.map((date) => date.getTime())));
+};
+
+const getVisibleMessageFilter = (conversation, userId) => {
+  const filter = { conversation: conversation._id };
+  const visibleAfter = getConversationVisibleAfter(conversation, userId);
+  if (visibleAfter) {
+    filter.createdAt = { $gt: visibleAfter };
+  }
+  return filter;
+};
+
 // @desc    Get all conversations for a user
 // @route   GET /api/conversations
 const getConversations = async (req, res) => {
@@ -58,24 +85,45 @@ const getConversations = async (req, res) => {
     const seenParticipants = new Set();
     const conversationsWithStatus = [];
 
-    conversations.forEach((conv) => {
+    for (const conv of conversations) {
       const otherParticipant = conv.participants.find(
         (p) => p._id.toString() !== req.user._id.toString()
       );
       const otherId = otherParticipant?._id?.toString();
-      if (!otherId || seenParticipants.has(otherId)) return;
+      if (!otherId || seenParticipants.has(otherId)) continue;
+
+      const visibleAfter = getConversationVisibleAfter(conv, req.user._id);
+      const visibleLastMessage = await Message.findOne(getVisibleMessageFilter(conv, req.user._id))
+        .sort({ createdAt: -1 })
+        .select('content fileName type sender createdAt');
+      const deletedForUser = getMapDateValue(
+        conv.deletedAtBy,
+        req.user._id.toString()
+      );
+      if (deletedForUser && !visibleLastMessage) continue;
+
       seenParticipants.add(otherId);
+
+      const unreadCounts = normalizeUnreadCounts(conv);
+      if (visibleAfter) {
+        unreadCounts[req.user._id.toString()] = 0;
+      }
 
       conversationsWithStatus.push({
         ...conv.toObject(),
-        unreadCounts: normalizeUnreadCounts(conv),
+        lastMessage: visibleLastMessage
+          ? visibleLastMessage.content || visibleLastMessage.fileName || 'File'
+          : '',
+        lastMessageTime: visibleLastMessage?.createdAt || null,
+        lastMessageSender: visibleLastMessage?.sender || undefined,
+        unreadCounts,
         otherParticipant,
         isOnline:
           req.user.showOnlineStatus !== false &&
           otherParticipant?.showOnlineStatus !== false &&
           onlineUsers.has(otherParticipant?._id.toString()),
       });
-    });
+    }
 
     res.json({ success: true, conversations: conversationsWithStatus });
   } catch (error) {
@@ -103,13 +151,14 @@ const getMessages = async (req, res) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
-    const messages = await Message.find({ conversation: id })
+    const messageFilter = getVisibleMessageFilter(conversation, req.user._id);
+    const messages = await Message.find(messageFilter)
       .populate('sender', 'name profilePic openToOpportunities profileThemeVariant')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
-    const total = await Message.countDocuments({ conversation: id });
+    const total = await Message.countDocuments(messageFilter);
 
     res.json({
       success: true,
@@ -490,28 +539,19 @@ const clearConversation = async (req, res) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
-    const messages = await Message.find({ conversation: id }).select('filePublicId fileUrl');
-    for (const message of messages) {
-      if (message.filePublicId || message.fileUrl) {
-        await deleteFromCloudinary(message.filePublicId || message.fileUrl);
-      }
-    }
-
-    await Message.deleteMany({ conversation: id });
-
-    // Reset conversation last message
-    conversation.lastMessage = '';
-    conversation.lastMessageTime = null;
-    conversation.lastMessageSender = undefined;
+    const userId = req.user._id.toString();
+    conversation.clearedAtBy = conversation.clearedAtBy || new Map();
+    conversation.clearedAtBy.set(userId, new Date());
+    conversation.unreadCounts = conversation.unreadCounts || new Map();
+    conversation.unreadCounts.set(userId, 0);
     await conversation.save();
 
-    // Emit socket event
     try {
       const io = getIO();
-      io.to(id).emit('conversation_cleared', { conversationId: id });
+      io.to(userId).emit('conversation_cleared', { conversationId: id });
     } catch (socketErr) {}
 
-    res.json({ success: true, message: 'Conversation cleared.' });
+    res.json({ success: true, message: 'Chat cleared for you.' });
   } catch (error) {
     console.error('Clear conversation error:', error);
     res.status(500).json({ message: 'Server error.' });
@@ -534,25 +574,19 @@ const deleteConversation = async (req, res) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
-    const messages = await Message.find({ conversation: id }).select('filePublicId fileUrl');
-    for (const message of messages) {
-      if (message.filePublicId || message.fileUrl) {
-        await deleteFromCloudinary(message.filePublicId || message.fileUrl);
-      }
-    }
+    const userId = req.user._id.toString();
+    conversation.deletedAtBy = conversation.deletedAtBy || new Map();
+    conversation.deletedAtBy.set(userId, new Date());
+    conversation.unreadCounts = conversation.unreadCounts || new Map();
+    conversation.unreadCounts.set(userId, 0);
+    await conversation.save();
 
-    await Message.deleteMany({ conversation: id });
-
-    // Delete the conversation itself
-    await Conversation.findByIdAndDelete(id);
-
-    // Emit socket event
     try {
       const io = getIO();
-      io.to(id).emit('conversation_deleted', { conversationId: id });
+      io.to(userId).emit('conversation_deleted', { conversationId: id });
     } catch (socketErr) {}
 
-    res.json({ success: true, message: 'Conversation deleted.' });
+    res.json({ success: true, message: 'Conversation deleted for you.' });
   } catch (error) {
     console.error('Delete conversation error:', error);
     res.status(500).json({ message: 'Server error.' });

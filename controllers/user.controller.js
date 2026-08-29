@@ -83,6 +83,22 @@ const getMyLoginHistory = async (req, res) => {
       LoginRecord.find(filter).sort({ loginAt: -1 }).skip(skip).limit(limit),
       LoginRecord.countDocuments(filter),
     ]);
+    const unseenIds = records
+      .filter((record) => !record.userSeenAt)
+      .map((record) => record._id);
+
+    if (unseenIds.length) {
+      const seenAt = new Date();
+      await LoginRecord.updateMany(
+        { _id: { $in: unseenIds }, user: req.user._id, userSeenAt: { $exists: false } },
+        { $set: { userSeenAt: seenAt } }
+      );
+      records.forEach((record) => {
+        if (!record.userSeenAt) {
+          record.userSeenAt = seenAt;
+        }
+      });
+    }
 
     res.json({
       success: true,
