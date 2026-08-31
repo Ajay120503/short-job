@@ -1,6 +1,7 @@
 const Story = require('../models/Story');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 const { getInitialModerationState, applyInitialRuleModeration } = require('../utils/adminSettings');
+const { sortByPriorityAndNewest } = require('../utils/contentOrdering');
 
 const USER_SIGNAL_SELECT = 'name profilePic badges role category institutionName institutionPic openToOpportunities isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant';
 
@@ -76,12 +77,23 @@ const getStories = async (req, res) => {
         grouped[authorId] = {
           author: story.author,
           stories: [],
+          latestAt: story.createdAt,
         };
       }
       grouped[authorId].stories.push(story);
     });
 
-    res.json({ success: true, stories: Object.values(grouped) });
+    const orderedStories = sortByPriorityAndNewest(
+      Object.values(grouped).map((group) => ({
+        ...group,
+        stories: [...group.stories].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+      })),
+      req.user,
+      (group) => group.author,
+      (group) => group.latestAt
+    ).map(({ latestAt, ...group }) => group);
+
+    res.json({ success: true, stories: orderedStories });
   } catch (error) {
     console.error('Get stories error:', error);
     res.status(500).json({ message: 'Server error.' });

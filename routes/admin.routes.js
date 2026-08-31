@@ -13,6 +13,7 @@ const {
   makeAdmin,
   removeAdmin,
   getModerationQueue,
+  getModerationArchive,
   getContentDetail,
   runContentRuleCheck,
   approveContent,
@@ -45,6 +46,7 @@ router.get('/login-records/user/:userId', authMiddleware, requireAdmin, getUserL
 router.get('/login-records/:id', authMiddleware, requireAdmin, getLoginRecordDetail);
 router.delete('/login-records/:id', authMiddleware, requireSuperAdmin, deleteLoginRecord);
 router.get('/queue', authMiddleware, requireAdmin, getModerationQueue);
+router.get('/archive', authMiddleware, requireAdmin, getModerationArchive);
 router.get('/content/:type/:id', authMiddleware, requireAdmin, getContentDetail);
 router.put('/content/:type/:id/run-check', authMiddleware, requireAdmin, runContentRuleCheck);
 router.put('/content/:type/:id/approve', authMiddleware, requireAdmin, approveContent);

@@ -6,6 +6,7 @@ const User = require('../models/User');
 const { getIO } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 const { getInitialModerationState, applyInitialRuleModeration } = require('../utils/adminSettings');
+const { pickPriorityPage, toId } = require('../utils/contentOrdering');
 
 const hasActiveBadge = (user, badgeType) =>
   (user.badges || []).some((badge) => badge.type === badgeType && badge.isActive !== false);
@@ -163,11 +164,24 @@ const getJobs = async (req, res) => {
         }
       : { ...filters, status: 'approved' };
 
-    const jobs = await JobPost.find(query)
-      .populate('postedBy', 'name profilePic role category institutionName institutionPic openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const orderedJobPage = req.user
+      ? await JobPost.find(query)
+          .select('_id postedBy createdAt')
+          .lean()
+          .then((rows) => pickPriorityPage(rows, req.user, (job) => job.postedBy, skip, limit))
+      : null;
+
+    const jobsQuery = req.user
+      ? JobPost.find({ _id: { $in: orderedJobPage.map((job) => job._id) } })
+      : JobPost.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit);
+
+    const jobs = await jobsQuery
+      .populate('postedBy', 'name profilePic role category institutionName institutionPic openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
+
+    if (req.user) {
+      const order = new Map(orderedJobPage.map((job, index) => [toId(job._id), index]));
+      jobs.sort((a, b) => (order.get(toId(a._id)) ?? 0) - (order.get(toId(b._id)) ?? 0));
+    }
 
     const total = await JobPost.countDocuments(query);
 

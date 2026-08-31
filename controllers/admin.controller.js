@@ -514,12 +514,7 @@ const getModerationQueue = async (req, res) => {
     const results = await Promise.all(
       types.map(async (itemType) => {
         const config = CONTENT_MODELS[itemType];
-        const reviewStatusQuery = {
-          $or: [
-            { status: 'pending_review' },
-            { status: 'rejected', 'moderationMeta.reviewMethod': 'auto_rejected' },
-          ],
-        };
+        const reviewStatusQuery = { status: 'pending_review' };
         const query = itemType === 'post'
           ? {
               $and: [
@@ -546,6 +541,56 @@ const getModerationQueue = async (req, res) => {
     res.json({ success: true, items });
   } catch (error) {
     console.error('Get moderation queue error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
+// @desc    Get rejected moderation archive (admin)
+// @route   GET /api/admin/archive
+const getModerationArchive = async (req, res) => {
+  try {
+    const { type } = req.query;
+
+    const types = type ? [type] : Object.keys(CONTENT_MODELS);
+    const invalidType = types.find((itemType) => !CONTENT_MODELS[itemType]);
+    if (invalidType) {
+      return res.status(400).json({ message: 'Invalid content type.' });
+    }
+
+    const results = await Promise.all(
+      types.map(async (itemType) => {
+        const config = CONTENT_MODELS[itemType];
+        const archiveStatusQuery = { status: 'rejected' };
+        const query = itemType === 'post'
+          ? {
+              $and: [
+                archiveStatusQuery,
+                {
+                  $or: [
+                    { type: { $ne: 'job' } },
+                    { jobPost: null },
+                    { jobPost: { $exists: false } },
+                  ],
+                },
+              ],
+            }
+          : archiveStatusQuery;
+        const docs = await config.Model.find(query)
+          .populate(config.populate, 'name email profilePic badges category institutionName openToOpportunities isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant')
+          .sort({ updatedAt: -1, createdAt: -1 });
+        return docs.map((doc) => ({ ...doc.toObject(), contentType: itemType }));
+      })
+    );
+
+    const items = results.flat().sort((a, b) => {
+      const aTime = new Date(a.updatedAt || a.createdAt || 0).getTime();
+      const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime();
+      return bTime - aTime;
+    });
+
+    res.json({ success: true, items });
+  } catch (error) {
+    console.error('Get moderation archive error:', error);
     res.status(500).json({ message: 'Server error.' });
   }
 };
@@ -873,6 +918,7 @@ module.exports = {
   makeAdmin,
   removeAdmin,
   getModerationQueue,
+  getModerationArchive,
   getContentDetail,
   runContentRuleCheck,
   approveContent,
