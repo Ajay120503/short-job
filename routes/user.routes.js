@@ -4,6 +4,7 @@ const authMiddleware = require('../middlewares/auth.middleware');
 const { optionalAuth } = require('../middlewares/auth.middleware');
 const { requireSuperAdmin } = require('../middlewares/role.middleware');
 const { uploadProfile } = require('../middlewares/upload.middleware');
+const { cacheResponse } = require('../middlewares/cache.middleware');
 const {
   getUserProfile,
   updateProfile,
@@ -38,13 +39,13 @@ router.get('/me/login-history', authMiddleware, getMyLoginHistory);
 router.delete('/me/login-history/:id', authMiddleware, deleteMyLoginRecord);
 
 // Public routes
-router.get('/search', optionalAuth, searchUsers);
-router.get('/:id', optionalAuth, getUserProfile);
-router.get('/:id/posts', optionalAuth, getUserPosts);
-router.get('/:id/jobs', optionalAuth, getUserJobs);
-router.get('/:id/followers', getFollowers);
-router.get('/:id/following', getFollowing);
-router.get('/:id/badges', getUserBadges);
+router.get('/search', optionalAuth, cacheResponse({ ttl: 30, varyByUser: true }), searchUsers);
+router.get('/:id', optionalAuth, cacheResponse({ ttl: 60, varyByUser: true }), getUserProfile);
+router.get('/:id/posts', optionalAuth, cacheResponse({ ttl: 30, varyByUser: true }), getUserPosts);
+router.get('/:id/jobs', optionalAuth, cacheResponse({ ttl: 30, varyByUser: true }), getUserJobs);
+router.get('/:id/followers', cacheResponse({ ttl: 30 }), getFollowers);
+router.get('/:id/following', cacheResponse({ ttl: 30 }), getFollowing);
+router.get('/:id/badges', cacheResponse({ ttl: 60 }), getUserBadges);
 
 // Protected routes
 router.put('/:id', authMiddleware, uploadProfile.fields([

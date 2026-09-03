@@ -3,6 +3,7 @@ const router = express.Router();
 const authMiddleware = require('../middlewares/auth.middleware');
 const { optionalAuth } = require('../middlewares/auth.middleware');
 const { uploadImage } = require('../middlewares/upload.middleware');
+const { cacheResponse } = require('../middlewares/cache.middleware');
 const {
   getJobs,
   createJob,
@@ -33,14 +34,14 @@ router.get('/applications/my', authMiddleware, getMyApplications);
 router.put('/applications/:id/status', authMiddleware, updateApplicationStatus);
 
 // Map view route (MUST be before /:id)
-router.get('/map', getJobsMap);
+router.get('/map', cacheResponse({ ttl: 60 }), getJobsMap);
 
 // Matched jobs (MUST be before /:id)
 router.get('/matched', authMiddleware, getMatchedJobs);
 
 // Public routes
-router.get('/', optionalAuth, getJobs);
-router.get('/:id', optionalAuth, getJob);
+router.get('/', optionalAuth, cacheResponse({ ttl: 30, varyByUser: true }), getJobs);
+router.get('/:id', optionalAuth, cacheResponse({ ttl: 60, varyByUser: true }), getJob);
 
 // Protected routes - any signed-in user can create opportunities; owners can edit/delete.
 router.post('/', authMiddleware, uploadImage.single('image'), createJob);

@@ -18,6 +18,8 @@ const LoginRecord = require('./models/LoginRecord');
 const { runFakeDetectionRuleOnly } = require('./utils/fakeDetectionRuleOnly');
 const { getAdminSettings } = require('./utils/adminSettings');
 const { deleteFromCloudinary } = require('./middlewares/upload.middleware');
+const { connectRedis, disconnectRedis, getRedisStatus } = require('./config/redis');
+const { invalidateCacheAfterMutation } = require('./middlewares/cache.middleware');
 
 // Import routes
 const authRoutes = require('./routes/auth.routes');
@@ -231,6 +233,7 @@ app.use('/api/auth/register', authLimiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
+app.use(invalidateCacheAfterMutation);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -238,6 +241,7 @@ app.get('/api/health', (req, res) => {
     success: true,
     message: 'ShortJob API is running',
     timestamp: new Date().toISOString(),
+    redis: getRedisStatus(),
   });
 });
 
@@ -310,6 +314,7 @@ const startServer = async () => {
     // Connect to database
     await connectDB();
     console.log('Database connected successfully');
+    await connectRedis();
     await removeLegacyLoginRecordTtlIndex();
 
     server.listen(PORT, () => {
@@ -349,5 +354,15 @@ const startServer = async () => {
 };
 
 startServer();
+
+const shutdown = async (signal) => {
+  console.log(`${signal} received, shutting down gracefully`);
+  server.close(async () => {
+    await disconnectRedis();
+    process.exit(0);
+  });
+};
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+process.once('SIGINT', () => shutdown('SIGINT'));
 
 module.exports = { app, server, io };
