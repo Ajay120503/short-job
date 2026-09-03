@@ -103,8 +103,15 @@ const userSchema = new mongoose.Schema(
     },
     age: {
       type: Number,
-      min: 0,
-      max: 120,
+      min: 13,
+      max: 100,
+    },
+    currentLocation: {
+      lat: Number,
+      lng: Number,
+      city: { type: String, default: '' },
+      state: { type: String, default: '' },
+      updatedAt: Date,
     },
     dateOfBirth: {
       type: Date,

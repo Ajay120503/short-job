@@ -56,10 +56,11 @@ const createStory = async (req, res) => {
 // @route   GET /api/stories
 const getStories = async (req, res) => {
   try {
+    const allowedAuthors = req.user ? [...(req.user.following || []), req.user._id] : [];
     const query = req.user
       ? {
           $or: [
-            { status: 'approved' },
+            { status: 'approved', author: { $in: allowedAuthors } },
             { author: req.user._id },
           ],
         }
@@ -130,7 +131,7 @@ const deleteStory = async (req, res) => {
       return res.status(404).json({ message: 'Story not found.' });
     }
 
-    if (story.author.toString() !== req.user._id.toString()) {
+    if (story.author.toString() !== req.user._id.toString() && !req.user.isAdmin && !req.user.isSuperAdmin) {
       return res.status(403).json({ message: 'You can only delete your own stories.' });
     }
 
@@ -146,9 +147,22 @@ const deleteStory = async (req, res) => {
   }
 };
 
+const getStoryViewers = async (req, res) => {
+  try {
+    const story = await Story.findById(req.params.id).populate('viewers', USER_SIGNAL_SELECT);
+    if (!story) return res.status(404).json({ message: 'Story not found.' });
+    if (story.author.toString() !== req.user._id.toString()) return res.status(403).json({ message: 'Only the author can view this list.' });
+    res.json({ success: true, viewers: story.viewers });
+  } catch (error) {
+    console.error('Get story viewers error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
 module.exports = {
   createStory,
   getStories,
   viewStory,
   deleteStory,
+  getStoryViewers,
 };

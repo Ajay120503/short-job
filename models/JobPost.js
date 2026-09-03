@@ -32,6 +32,15 @@ const jobPostSchema = new mongoose.Schema(
       enum: ['teacher', 'professor', 'hod', 'principal', 'intern', 'volunteer', 'assistant', 'research', 'other'],
       default: 'other',
     },
+    shortJobType: {
+      type: String,
+      enum: ['one_day_gig', 'few_hours', 'weekend_only', 'short_term', 'ongoing_part_time', 'full_time', 'internship', 'volunteer'],
+      required: [true, 'Short job type is required'],
+    },
+    duration: {
+      unit: { type: String, enum: ['hours', 'days'], required: true },
+      value: { type: Number, required: true, min: 1 },
+    },
     isPaid: {
       type: Boolean,
       default: false,
@@ -112,6 +121,10 @@ const jobPostSchema = new mongoose.Schema(
       lat: { type: Number },
       lng: { type: Number },
     },
+    location_point: {
+      type: { type: String, enum: ['Point'], default: 'Point' },
+      coordinates: { type: [Number], default: undefined },
+    },
     qna: [{
       question: { type: String, required: true },
       askedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -155,5 +168,6 @@ jobPostSchema.index({ isActive: 1, deadline: 1 });
 jobPostSchema.index({ location: 1, isPaid: 1 });
 jobPostSchema.index({ workplaceCity: 1, workplaceState: 1 });
 jobPostSchema.index({ status: 1, createdAt: -1 });
+jobPostSchema.index({ location_point: '2dsphere' });
 
 module.exports = mongoose.model('JobPost', jobPostSchema);

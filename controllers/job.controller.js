@@ -7,6 +7,7 @@ const { getIO } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 const { getInitialModerationState, applyInitialRuleModeration } = require('../utils/adminSettings');
 const { pickPriorityPage, toId } = require('../utils/contentOrdering');
+const { getProfileCompletionStatus } = require('../utils/profileCompletion');
 
 const hasActiveBadge = (user, badgeType) =>
   (user.badges || []).some((badge) => badge.type === badgeType && badge.isActive !== false);
@@ -136,19 +137,59 @@ const getJobCoordinatesFromBody = (body) => {
   return { lat, lng };
 };
 
+const requireAdult = (user, action, res) => {
+  if (user.age === undefined || user.age === null) {
+    res.status(403).json({ error: 'profile_incomplete', missingField: 'age', message: `Add your age to your profile before ${action}.` });
+    return false;
+  }
+  if (Number(user.age) < 18) {
+    res.status(403).json({ error: 'age_restricted', message: `You must be 18 or older to ${action} on ShorJob.` });
+    return false;
+  }
+  return true;
+};
+
+const geocodeJobAddress = async (body) => {
+  const query = [body.workplaceAddress, body.workplaceCity, body.workplaceState, body.workplaceCountry, body.institutionName]
+    .filter(Boolean).join(', ');
+  if (!query) return undefined;
+  try {
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`, {
+      headers: { 'User-Agent': 'ShorJob/1.0 (jobs@shorjob.app)' },
+      signal: AbortSignal.timeout(7000),
+    });
+    if (!response.ok) return undefined;
+    const [place] = await response.json();
+    if (!place) return undefined;
+    return { lat: Number(place.lat), lng: Number(place.lon) };
+  } catch (_) { return undefined; }
+};
+
+const distanceKm = (aLat, aLng, bLat, bLng) => {
+  const rad = (value) => value * Math.PI / 180;
+  const dLat = rad(bLat - aLat);
+  const dLng = rad(bLng - aLng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(aLat)) * Math.cos(rad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+};
+
 // @desc    Get all active jobs
 // @route   GET /api/jobs
 const getJobs = async (req, res) => {
   try {
-    const { paid, location, roleType, search, page: pageStr, limit: limitStr } = req.query;
+    const {
+      paid, isPaid, location, roleType, shortJobType, city, state,
+      lat, lng, radiusKm, search, page: pageStr, limit: limitStr,
+    } = req.query;
     const page = parseInt(pageStr) || 1;
     const limit = parseInt(limitStr) || 10;
     const skip = (page - 1) * limit;
 
     const filters = { isActive: true, deadline: { $gte: getJobDeadlineCutoff() } };
 
-    if (paid !== undefined) {
-      filters.isPaid = paid === 'true';
+    const paidFilter = isPaid ?? paid;
+    if (paidFilter !== undefined) {
+      filters.isPaid = paidFilter === 'true';
     }
 
     if (location) {
@@ -158,6 +199,13 @@ const getJobs = async (req, res) => {
     if (roleType) {
       filters.roleType = roleType;
     }
+
+    if (shortJobType) {
+      const values = String(shortJobType).split(',').filter(Boolean);
+      filters.shortJobType = values.length > 1 ? { $in: values } : values[0];
+    }
+    if (city) filters.workplaceCity = new RegExp(String(city).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    if (state) filters.workplaceState = new RegExp(`^${String(state).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 
     if (search) {
       filters.$text = { $search: search };
@@ -173,7 +221,15 @@ const getJobs = async (req, res) => {
         }
       : { ...filters, status: 'approved' };
 
-    const orderedJobPage = req.user
+    const geoLat = parseCoordinate(lat);
+    const geoLng = parseCoordinate(lng);
+    const geoRadius = Number(radiusKm);
+    const geoActive = geoLat !== undefined && geoLng !== undefined && Number.isFinite(geoRadius) && geoRadius > 0;
+    if (geoActive) {
+      query.location_point = { $geoWithin: { $centerSphere: [[geoLng, geoLat], geoRadius / 6371] } };
+    }
+
+    const orderedJobPage = req.user && !geoActive
       ? await JobPost.find(query)
           .select('_id postedBy createdAt updatedAt')
           .lean()
@@ -189,23 +245,41 @@ const getJobs = async (req, res) => {
           )
       : null;
 
-    const jobsQuery = req.user
+    const jobsQuery = req.user && !geoActive
       ? JobPost.find({ _id: { $in: orderedJobPage.map((job) => job._id) } })
-      : JobPost.find(query).sort({ updatedAt: -1, createdAt: -1 }).skip(skip).limit(limit);
+      : JobPost.find(query).sort({ createdAt: -1 });
+
+    if (!req.user || geoActive) jobsQuery.skip(skip).limit(limit);
 
     const jobs = await jobsQuery
       .populate('postedBy', 'name profilePic role category institutionName institutionPic openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
 
-    if (req.user) {
+    if (req.user && !geoActive) {
       const order = new Map(orderedJobPage.map((job, index) => [toId(job._id), index]));
       jobs.sort((a, b) => (order.get(toId(a._id)) ?? 0) - (order.get(toId(b._id)) ?? 0));
+    }
+    if (geoActive) {
+      jobs.forEach((job) => {
+        const point = job.location_point?.coordinates;
+        if (point?.length === 2) job.set('distanceKm', distanceKm(geoLat, geoLng, point[1], point[0]), { strict: false });
+      });
+      jobs.sort((a, b) => (a.get('distanceKm') ?? Infinity) - (b.get('distanceKm') ?? Infinity));
     }
 
     const total = await JobPost.countDocuments(query);
 
+    const responseJobs = jobs.map((job) => {
+      const plain = job.toObject ? job.toObject() : job;
+      if (geoActive) {
+        const point = plain.location_point?.coordinates;
+        if (point?.length === 2) plain.distanceKm = distanceKm(geoLat, geoLng, point[1], point[0]);
+      }
+      return plain;
+    });
+
     res.json({
       success: true,
-      jobs,
+      jobs: responseJobs,
       pagination: {
         page,
         limit,
@@ -225,22 +299,29 @@ const createJob = async (req, res) => {
   let uploadedJobImagePublicId = '';
   let jobCreated = false;
   try {
+    if (!requireAdult(req.user, 'posting a job', res)) return;
     const {
       title, description, institutionName, roleType, isPaid,
       stipend, currency, location, requiredQualifications, skillsRequired,
       deadline, contactEmail, maxApplicants,
       workplaceName, workplaceAddress, workplaceCity, workplaceState,
-      workplaceCountry,
+      workplaceCountry, shortJobType, durationUnit, durationValue,
     } = req.body;
 
     if (!title || !description || !deadline || !contactEmail) {
       return res.status(400).json({ message: 'Title, description, deadline, and contact email are required.' });
     }
+    const duration = req.body.duration && typeof req.body.duration === 'object'
+      ? req.body.duration : { unit: durationUnit, value: Number(durationValue) };
+    if (!shortJobType || !['hours', 'days'].includes(duration.unit) || !Number.isInteger(Number(duration.value)) || Number(duration.value) < 1) {
+      return res.status(400).json({ message: 'Short job type and a positive whole-number duration are required.' });
+    }
 
-    const coordinates = getJobCoordinatesFromBody(req.body);
+    let coordinates = getJobCoordinatesFromBody(req.body);
     if (coordinates === null) {
       return res.status(400).json({ message: 'Please provide valid workplace coordinates.' });
     }
+    if (!coordinates && location !== 'remote') coordinates = await geocodeJobAddress(req.body);
 
     const moderationState = await getInitialModerationState('job');
 
@@ -251,6 +332,8 @@ const createJob = async (req, res) => {
       title,
       description,
       roleType: roleType || 'other',
+      shortJobType,
+      duration: { unit: duration.unit, value: Number(duration.value) },
       isPaid: isPaid === 'true' || isPaid === true,
       currency: currency || 'INR',
       stipend: stipend || 0,
@@ -279,6 +362,7 @@ const createJob = async (req, res) => {
     }
     if (coordinates) {
       jobData.coordinates = coordinates;
+      jobData.location_point = { type: 'Point', coordinates: [coordinates.lng, coordinates.lat] };
     }
 
     const moderatedState = await applyInitialRuleModeration(jobData, 'job', moderationState);
@@ -374,6 +458,7 @@ const updateJob = async (req, res) => {
       'deadline', 'contactEmail', 'maxApplicants', 'isActive',
       'workplaceName', 'workplaceAddress', 'workplaceCity',
       'workplaceState', 'workplaceCountry',
+      'shortJobType',
     ];
 
     for (const field of allowedFields) {
@@ -385,6 +470,13 @@ const updateJob = async (req, res) => {
     if (req.body.skillsRequired !== undefined) {
       job.skillsRequired = normalizeListInput(req.body.skillsRequired);
     }
+    if (req.body.duration || req.body.durationUnit || req.body.durationValue) {
+      const duration = req.body.duration && typeof req.body.duration === 'object' ? req.body.duration : { unit: req.body.durationUnit, value: Number(req.body.durationValue) };
+      if (!['hours', 'days'].includes(duration.unit) || !Number.isInteger(Number(duration.value)) || Number(duration.value) < 1) return res.status(400).json({ message: 'Duration must be a positive whole number of hours or days.' });
+      job.duration = { unit: duration.unit, value: Number(duration.value) };
+    }
+    if (!job.shortJobType) job.shortJobType = 'short_term';
+    if (!job.duration?.value) job.duration = { unit: 'days', value: 1 };
 
     const coordinates = getJobCoordinatesFromBody(req.body);
     if (coordinates === null) {
@@ -392,8 +484,10 @@ const updateJob = async (req, res) => {
     }
     if (coordinates) {
       job.coordinates = coordinates;
+      job.location_point = { type: 'Point', coordinates: [coordinates.lng, coordinates.lat] };
     } else if (req.body.clearCoordinates === 'true' || req.body.clearCoordinates === true) {
       job.coordinates = undefined;
+      job.location_point = undefined;
     }
 
     // If a new image was uploaded, replace the old one on Cloudinary
@@ -480,6 +574,11 @@ const applyToJob = async (req, res) => {
   let uploadedCoverLetterPublicId = '';
   let applicationCreated = false;
   try {
+    if (!requireAdult(req.user, 'apply', res)) return;
+    const completion = getProfileCompletionStatus(req.user);
+    if (!completion.isComplete) {
+      return res.status(403).json({ error: 'profile_incomplete', missingFields: completion.missingMandatory, message: 'Complete your profile before applying to jobs.' });
+    }
     const job = await JobPost.findById(req.params.id);
 
     if (!job) {
@@ -884,6 +983,11 @@ const getJobsMap = async (req, res) => {
 // @route   POST /api/jobs/:id/quick-apply
 const quickApply = async (req, res) => {
   try {
+    if (!requireAdult(req.user, 'apply', res)) return;
+    const completion = getProfileCompletionStatus(req.user);
+    if (!completion.isComplete) {
+      return res.status(403).json({ error: 'profile_incomplete', missingFields: completion.missingMandatory, message: 'Complete your profile before applying to jobs.' });
+    }
     if (!canApplyToJobs(req.user)) {
       return res.status(403).json({ message: 'This account cannot quick apply.' });
     }
@@ -909,23 +1013,6 @@ const quickApply = async (req, res) => {
 
     if (existingApplication) {
       return res.status(400).json({ message: 'You have already applied to this job.' });
-    }
-
-    // Profile strength check
-    const student = await User.findById(req.user._id);
-    let score = 0;
-    if (student.name) score += 10;
-    if (student.profilePic?.url) score += 15;
-    if (student.bio) score += 10;
-    if (student.age) score += 5;
-    if (student.address) score += 5;
-    if (student.resumeUrl) score += 20;
-    if (student.skills?.length >= 3) score += 15;
-    if (student.qualifications?.length >= 1) score += 10;
-    if (student.educationLevel) score += 10;
-
-    if (score < 80) {
-      return res.status(400).json({ message: 'Complete your profile to unlock Quick Apply. Profile strength must be at least 80%.' });
     }
 
     const application = await Application.create({

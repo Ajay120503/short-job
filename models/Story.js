@@ -25,7 +25,7 @@ const storySchema = new mongoose.Schema(
     status: {
       type: String,
       enum: ['pending_review', 'approved', 'rejected', 'flagged'],
-      default: 'approved',
+      default: 'pending_review',
     },
     moderationMeta: {
       reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

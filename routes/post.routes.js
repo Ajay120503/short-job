@@ -13,6 +13,8 @@ const {
   getSavedPosts,
   getPost,
   getNoticeboardPosts,
+  votePoll,
+  toggleRsvp,
 } = require('../controllers/post.controller');
 
 // Static routes before /:id
@@ -29,5 +31,7 @@ router.put('/:id', authMiddleware, uploadPostImages.array('images', 5), updatePo
 router.delete('/:id', authMiddleware, deletePost);
 router.post('/:id/like', authMiddleware, toggleLike);
 router.post('/:id/save', authMiddleware, toggleSave);
+router.post('/:id/vote', authMiddleware, votePoll);
+router.post('/:id/rsvp', authMiddleware, toggleRsvp);
 
 module.exports = router;

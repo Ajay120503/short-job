@@ -9,7 +9,7 @@ const postSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['general', 'job', 'announcement', 'achievement', 'noticeboard'],
+      enum: ['general', 'job', 'announcement', 'achievement', 'noticeboard', 'question', 'poll', 'event', 'resource_share', 'celebration', 'discussion'],
       default: 'general',
     },
     text: {
@@ -48,6 +48,17 @@ const postSchema = new mongoose.Schema(
       default: null,
     },
     noticeboardExpiresAt: { type: Date },
+    pollOptions: [{
+      text: { type: String, trim: true },
+      votes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    }],
+    eventDetails: {
+      date: Date,
+      location: { type: String, trim: true },
+      rsvps: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    },
+    resourceUrl: { type: String, trim: true },
+    resourceFileType: { type: String, trim: true },
     status: {
       type: String,
       enum: ['pending_review', 'approved', 'rejected', 'flagged'],

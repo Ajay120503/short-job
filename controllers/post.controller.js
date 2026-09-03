@@ -133,9 +133,9 @@ const createPost = async (req, res) => {
   const uploadedPublicIds = [];
   let postCreated = false;
   try {
-    const { text, type, tags } = req.body;
+    const { text, type, tags, eventDate, eventLocation, resourceUrl, resourceFileType } = req.body;
 
-    if (!text && (!req.files || req.files.length === 0)) {
+    if (!text && (!req.files || req.files.length === 0) && !['poll', 'event', 'resource_share'].includes(type)) {
       return res.status(400).json({ message: 'Post must have text or images.' });
     }
 
@@ -149,6 +149,23 @@ const createPost = async (req, res) => {
       images: [],
       ...moderationState,
     };
+
+    if (type === 'poll') {
+      let options;
+      try { options = JSON.parse(req.body.pollOptions || '[]'); } catch (_) { options = []; }
+      options = options.map((option) => String(option).trim()).filter(Boolean);
+      if (options.length < 2 || options.length > 6) return res.status(400).json({ message: 'Polls require 2 to 6 options.' });
+      postData.pollOptions = options.map((option) => ({ text: option, votes: [] }));
+    }
+    if (type === 'event') {
+      if (!eventDate || Number.isNaN(new Date(eventDate).getTime()) || !eventLocation?.trim()) return res.status(400).json({ message: 'Event date and location are required.' });
+      postData.eventDetails = { date: new Date(eventDate), location: eventLocation.trim(), rsvps: [] };
+    }
+    if (type === 'resource_share') {
+      if (!resourceUrl?.trim()) return res.status(400).json({ message: 'A resource link is required.' });
+      postData.resourceUrl = resourceUrl.trim();
+      postData.resourceFileType = resourceFileType || 'link';
+    }
 
     // Set expiry for noticeboard posts
     if (type === 'noticeboard') {
@@ -556,6 +573,37 @@ const moderatePost = async (req, res) => {
   }
 };
 
+const votePoll = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+    const optionIndex = Number(req.body.optionIndex);
+    if (!post || post.type !== 'poll') return res.status(404).json({ message: 'Poll not found.' });
+    if (!Number.isInteger(optionIndex) || !post.pollOptions[optionIndex]) return res.status(400).json({ message: 'Invalid poll option.' });
+    post.pollOptions.forEach((option) => option.votes.pull(req.user._id));
+    post.pollOptions[optionIndex].votes.addToSet(req.user._id);
+    await post.save();
+    res.json({ success: true, pollOptions: post.pollOptions });
+  } catch (error) {
+    console.error('Vote poll error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
+const toggleRsvp = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+    if (!post || post.type !== 'event') return res.status(404).json({ message: 'Event not found.' });
+    const attending = post.eventDetails.rsvps.some((id) => id.toString() === req.user._id.toString());
+    if (attending) post.eventDetails.rsvps.pull(req.user._id);
+    else post.eventDetails.rsvps.addToSet(req.user._id);
+    await post.save();
+    res.json({ success: true, attending: !attending, count: post.eventDetails.rsvps.length });
+  } catch (error) {
+    console.error('RSVP error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
 module.exports = {
   getFeed,
   createPost,
@@ -567,4 +615,6 @@ module.exports = {
   getPost,
   getNoticeboardPosts,
   moderatePost,
+  votePoll,
+  toggleRsvp,
 };

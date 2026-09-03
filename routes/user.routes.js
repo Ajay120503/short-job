@@ -24,6 +24,7 @@ const {
   getMyLoginHistory,
   deleteMyLoginRecord,
   updateMyLoginAuditPreference,
+  updateCurrentLocation,
 } = require('../controllers/user.controller');
 
 // Static routes MUST be before /:id
@@ -32,6 +33,7 @@ router.post('/me/badges', authMiddleware, updateMyBadges);
 router.post('/request-verification', authMiddleware, uploadProfile.single('document'), requestVerification);
 router.get('/online', authMiddleware, getOnlineUserIds);
 router.patch('/me/login-audit', authMiddleware, updateMyLoginAuditPreference);
+router.patch('/me/location', authMiddleware, updateCurrentLocation);
 router.get('/me/login-history', authMiddleware, getMyLoginHistory);
 router.delete('/me/login-history/:id', authMiddleware, deleteMyLoginRecord);
 

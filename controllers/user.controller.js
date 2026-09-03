@@ -18,6 +18,37 @@ const hasActiveBadge = (user, badgeType) =>
 
 const canUseOpportunityStatus = (user) => Boolean(user);
 
+const updateCurrentLocation = async (req, res) => {
+  try {
+    const lat = Number(req.body.lat);
+    const lng = Number(req.body.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return res.status(400).json({ message: 'Valid latitude and longitude are required.' });
+    }
+
+    let city = '';
+    let state = '';
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`, {
+        headers: { 'User-Agent': 'ShorJob/1.0 (location@shorjob.app)' },
+        signal: AbortSignal.timeout(7000),
+      });
+      if (response.ok) {
+        const place = await response.json();
+        city = place.address?.city || place.address?.town || place.address?.village || place.address?.district || '';
+        state = place.address?.state || '';
+      }
+    } catch (_) { /* Coordinates are still useful if reverse geocoding is unavailable. */ }
+
+    const currentLocation = { lat, lng, city, state, updatedAt: new Date() };
+    await User.findByIdAndUpdate(req.user._id, { currentLocation });
+    res.json({ success: true, currentLocation });
+  } catch (error) {
+    console.error('Update current location error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
 const calculateAgeFromDate = (dateValue) => {
   if (!dateValue) return undefined;
   const birthDate = new Date(dateValue);
@@ -818,4 +849,5 @@ module.exports = {
   updateTimeline,
   updateMyBadges,
   getUserBadges,
+  updateCurrentLocation,
 };
