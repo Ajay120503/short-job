@@ -16,7 +16,7 @@ const adminSettingsSchema = new mongoose.Schema(
     notifyCreators: { type: Boolean, default: true },
     autoBlockThreshold: { type: Number, default: 3, min: 1, max: 50 },
     emailNotifications: { type: Boolean, default: true },
-    loginAuditEnabled: { type: Boolean, default: false },
+    loginAuditEnabled: { type: Boolean, default: true },
     requireReviewNewUsers: { type: Boolean, default: false },
     contentModerationRules: { type: Boolean, default: true },
     moderationContentTypes: {

@@ -10,7 +10,7 @@ const DEFAULT_ADMIN_SETTINGS = {
   notifyCreators: true,
   autoBlockThreshold: 3,
   emailNotifications: true,
-  loginAuditEnabled: false,
+  loginAuditEnabled: true,
   requireReviewNewUsers: false,
   contentModerationRules: true,
   moderationContentTypes: {
