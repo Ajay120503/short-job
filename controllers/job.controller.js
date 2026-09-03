@@ -175,14 +175,23 @@ const getJobs = async (req, res) => {
 
     const orderedJobPage = req.user
       ? await JobPost.find(query)
-          .select('_id postedBy createdAt')
+          .select('_id postedBy createdAt updatedAt')
           .lean()
-          .then((rows) => pickPriorityPage(rows, req.user, (job) => job.postedBy, skip, limit))
+          .then((rows) =>
+            pickPriorityPage(
+              rows,
+              req.user,
+              (job) => job.postedBy,
+              skip,
+              limit,
+              (job) => job.updatedAt || job.createdAt
+            )
+          )
       : null;
 
     const jobsQuery = req.user
       ? JobPost.find({ _id: { $in: orderedJobPage.map((job) => job._id) } })
-      : JobPost.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit);
+      : JobPost.find(query).sort({ updatedAt: -1, createdAt: -1 }).skip(skip).limit(limit);
 
     const jobs = await jobsQuery
       .populate('postedBy', 'name profilePic role category institutionName institutionPic openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
