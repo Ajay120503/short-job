@@ -142,6 +142,12 @@ const OTP_RESEND_LIMIT = 5;
 
 const generateOtp = () => crypto.randomInt(100000, 1000000).toString();
 
+const logRenderOtp = (purpose, email, otp) => {
+  if (process.env.RENDER === 'true') {
+    console.log(`[RENDER OTP] ${purpose} | ${email} | ${otp}`);
+  }
+};
+
 const setRegistrationOtp = async (user) => {
   const otp = generateOtp();
   user.otp = await bcrypt.hash(otp, 10);
@@ -160,6 +166,7 @@ const setRegistrationOtp = async (user) => {
   }
 
   await user.save();
+  logRenderOtp('registration', user.email, otp);
   return otp;
 };
 
@@ -666,12 +673,12 @@ const forgotPassword = async (req, res) => {
     }
 
     // Generate 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    // console.log(otp);
+    const otp = generateOtp();
 
     user.resetPasswordToken = otp;
     user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
     await user.save();
+    logRenderOtp('password-reset', user.email, otp);
 
     // Send OTP email
     try {
