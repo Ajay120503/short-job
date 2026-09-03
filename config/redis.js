@@ -12,7 +12,8 @@ const connectRedis = async () => {
   try {
     const { hostname } = new URL(process.env.REDIS_URL);
     const isRenderInternalHost = /^red-[a-z0-9]+$/i.test(hostname);
-    if (process.env.NODE_ENV !== 'production' && isRenderInternalHost) {
+    const isRenderRuntime = process.env.RENDER === 'true';
+    if (!isRenderRuntime && isRenderInternalHost) {
       console.warn('Redis disabled locally: the configured Render internal URL is only reachable from Render. Use localhost Redis or a Render external URL for local development.');
       return false;
     }
