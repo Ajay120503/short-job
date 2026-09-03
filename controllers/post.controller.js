@@ -1,4 +1,5 @@
 const Post = require('../models/Post');
+const JobPost = require('../models/JobPost');
 const Comment = require('../models/Comment');
 const Notification = require('../models/Notification');
 const { getIO } = require('../config/socket');
@@ -31,6 +32,20 @@ const canViewContent = (content, user, authorField = 'author') => {
   return authorId?.toString?.() === user._id.toString();
 };
 
+const getExpiredJobPostFilter = async () => {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const expiredJobIds = await JobPost.find({ deadline: { $lt: todayStart } }).distinct('_id');
+
+  return {
+    $or: [
+      { jobPost: null },
+      { jobPost: { $exists: false } },
+      { jobPost: { $nin: expiredJobIds } },
+    ],
+  };
+};
+
 // @desc    Get feed posts (paginated)
 // @route   GET /api/posts
 const getFeed = async (req, res) => {
@@ -56,6 +71,9 @@ const getFeed = async (req, res) => {
         ],
       };
     }
+
+    const liveJobPostFilter = await getExpiredJobPostFilter();
+    query = { $and: [query, liveJobPostFilter] };
 
     const orderedPostPage = req.user
       ? await Post.find(query)

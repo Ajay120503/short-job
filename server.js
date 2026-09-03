@@ -188,7 +188,6 @@ app.use(
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5000',
-  'https://edu-connect-3.vercel.app',
   'https://edu-connect-fwoo.onrender.com',
   'https://short-job-3.vercel.app'
 ];

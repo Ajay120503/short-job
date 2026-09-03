@@ -14,6 +14,7 @@ const {
   updateApplicationStatus,
   getMyApplications,
   getMyJobs,
+  getMyArchivedJobs,
   getMatchedJobs,
   incrementViewCount,
   getJobsMap,
@@ -25,6 +26,7 @@ const {
 
 // My jobs routes (MUST be before /:id to avoid route conflicts)
 router.get('/my/list', authMiddleware, getMyJobs);
+router.get('/my/archive', authMiddleware, getMyArchivedJobs);
 
 // Application routes (MUST be before /:id to avoid route conflicts)
 router.get('/applications/my', authMiddleware, getMyApplications);

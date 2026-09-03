@@ -21,6 +21,15 @@ const canViewJob = (job, user) => {
   return postedBy?.toString?.() === user._id.toString();
 };
 
+const getJobDeadlineCutoff = () => {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  return todayStart;
+};
+
+const isJobExpired = (job) =>
+  Boolean(job?.deadline && new Date(job.deadline) < getJobDeadlineCutoff());
+
 const normalizeMatchText = (value = '') =>
   String(value)
     .toLowerCase()
@@ -136,7 +145,7 @@ const getJobs = async (req, res) => {
     const limit = parseInt(limitStr) || 10;
     const skip = (page - 1) * limit;
 
-    const filters = { isActive: true };
+    const filters = { isActive: true, deadline: { $gte: getJobDeadlineCutoff() } };
 
     if (paid !== undefined) {
       filters.isPaid = paid === 'true';
@@ -472,7 +481,7 @@ const applyToJob = async (req, res) => {
       return res.status(400).json({ message: 'You cannot apply to your own opportunity.' });
     }
 
-    if (!job.isActive || job.status !== 'approved') {
+    if (!job.isActive || job.status !== 'approved' || isJobExpired(job)) {
       return res.status(400).json({ message: 'This job is no longer accepting applications.' });
     }
 
@@ -692,6 +701,35 @@ const getMyJobs = async (req, res) => {
   }
 };
 
+// @desc    Get expired jobs posted by current user
+// @route   GET /api/jobs/my/archive
+const getMyArchivedJobs = async (req, res) => {
+  try {
+    const jobs = await JobPost.find({
+      postedBy: req.user._id,
+      deadline: { $lt: getJobDeadlineCutoff() },
+    })
+      .populate('postedBy', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant')
+      .sort({ deadline: -1, createdAt: -1 });
+
+    const jobsWithCounts = await Promise.all(
+      jobs.map(async (job) => {
+        const applicationCount = await Application.countDocuments({ jobPost: job._id });
+        return {
+          ...job.toObject(),
+          applicationCount,
+          archiveReason: 'Deadline passed',
+        };
+      })
+    );
+
+    res.json({ success: true, jobs: jobsWithCounts });
+  } catch (error) {
+    console.error('Get my archived jobs error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
 // @desc    F01 — Get matched jobs for student based on profile
 // @route   GET /api/jobs/matched
 const getMatchedJobs = async (req, res) => {
@@ -705,6 +743,7 @@ const getMatchedJobs = async (req, res) => {
       isActive: true,
       status: 'approved',
       postedBy: { $ne: req.user._id },
+      deadline: { $gte: getJobDeadlineCutoff() },
     })
       .populate('postedBy', 'name profilePic role category institutionName institutionPic openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
 
@@ -802,7 +841,11 @@ const incrementViewCount = async (req, res) => {
 const getJobsMap = async (req, res) => {
   try {
     const { city, state } = req.query;
-    let query = { isActive: true, status: 'approved' };
+    let query = {
+      isActive: true,
+      status: 'approved',
+      deadline: { $gte: getJobDeadlineCutoff() },
+    };
 
     const jobs = await JobPost.find(query)
       .select('title institutionName institutionLogo isPaid roleType coordinates location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry postedBy')
@@ -845,7 +888,7 @@ const quickApply = async (req, res) => {
       return res.status(400).json({ message: 'You cannot apply to your own opportunity.' });
     }
 
-    if (!job.isActive || job.status !== 'approved') {
+    if (!job.isActive || job.status !== 'approved' || isJobExpired(job)) {
       return res.status(400).json({ message: 'This job is no longer accepting applications.' });
     }
 
@@ -1043,6 +1086,7 @@ module.exports = {
   updateApplicationStatus,
   getMyApplications,
   getMyJobs,
+  getMyArchivedJobs,
   getMatchedJobs,
   incrementViewCount,
   getJobsMap,
