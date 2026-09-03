@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const authMiddleware = require('../middlewares/auth.middleware');
 const { optionalAuth } = require('../middlewares/auth.middleware');
@@ -27,6 +28,13 @@ const {
   updateMyLoginAuditPreference,
   updateCurrentLocation,
 } = require('../controllers/user.controller');
+
+router.param('id', (req, res, next, id) => {
+  if (!mongoose.isObjectIdOrHexString(id)) {
+    return res.status(400).json({ message: 'Invalid user ID.' });
+  }
+  next();
+});
 
 // Static routes MUST be before /:id
 router.patch('/me/opportunity-status', authMiddleware, toggleOpportunityStatus);

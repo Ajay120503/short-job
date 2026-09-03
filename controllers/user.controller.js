@@ -312,16 +312,24 @@ const updateProfile = async (req, res) => {
       updates.age = undefined;
     } else if (updates.dateOfBirth) {
       const calculatedAge = calculateAgeFromDate(updates.dateOfBirth);
-      if (calculatedAge === undefined || calculatedAge > 120) {
-        return res.status(400).json({ message: 'Please provide a valid date of birth.' });
+      if (calculatedAge === undefined || calculatedAge < 18 || calculatedAge > 100) {
+        return res.status(400).json({
+          message: calculatedAge < 18
+            ? 'You must be at least 18 years old to use ShortJob.'
+            : 'Please provide a valid date of birth for an age between 18 and 100.',
+          errors: { age: calculatedAge < 18 ? 'Minimum age is 18.' : 'Age must be between 18 and 100.' },
+        });
       }
       updates.age = calculatedAge;
     } else if (updates.age === '') {
       updates.age = undefined;
     } else if (updates.age !== undefined) {
       const age = Number(updates.age);
-      if (!Number.isFinite(age) || age < 0 || age > 120) {
-        return res.status(400).json({ message: 'Please provide a valid age.' });
+      if (!Number.isFinite(age) || age < 18 || age > 100) {
+        return res.status(400).json({
+          message: 'Age must be between 18 and 100.',
+          errors: { age: 'Age must be between 18 and 100.' },
+        });
       }
       updates.age = age;
     }
@@ -386,6 +394,15 @@ const updateProfile = async (req, res) => {
     res.json({ success: true, user });
   } catch (error) {
     console.error('Update profile error:', error);
+    if (error.name === 'ValidationError') {
+      const errors = Object.fromEntries(
+        Object.entries(error.errors || {}).map(([field, detail]) => [field, detail.message])
+      );
+      return res.status(400).json({
+        message: Object.values(errors)[0] || 'Please correct the highlighted profile fields.',
+        errors,
+      });
+    }
     res.status(500).json({ message: 'Server error.' });
   }
 };
@@ -535,7 +552,7 @@ const getUserPosts = async (req, res) => {
 
     const posts = await Post.find(query)
       .populate('author', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant')
-      .populate('jobPost', 'title institutionName roleType isPaid stipend currency location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates deadline status')
+      .populate('jobPost', 'title institutionName roleType shortJobType duration startTime endTime isPaid stipend currency location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates deadline status')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);

@@ -305,7 +305,7 @@ const createJob = async (req, res) => {
       stipend, currency, location, requiredQualifications, skillsRequired,
       deadline, contactEmail, maxApplicants,
       workplaceName, workplaceAddress, workplaceCity, workplaceState,
-      workplaceCountry, shortJobType, durationUnit, durationValue,
+      workplaceCountry, shortJobType, durationUnit, durationValue, startTime, endTime,
     } = req.body;
 
     if (!title || !description || !deadline || !contactEmail) {
@@ -315,6 +315,10 @@ const createJob = async (req, res) => {
       ? req.body.duration : { unit: durationUnit, value: Number(durationValue) };
     if (!shortJobType || !['hours', 'days'].includes(duration.unit) || !Number.isInteger(Number(duration.value)) || Number(duration.value) < 1) {
       return res.status(400).json({ message: 'Short job type and a positive whole-number duration are required.' });
+    }
+    const validTime = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+    if (!validTime.test(startTime || '') || !validTime.test(endTime || '') || startTime === endTime) {
+      return res.status(400).json({ message: 'Valid and different start and end times are required.' });
     }
 
     let coordinates = getJobCoordinatesFromBody(req.body);
@@ -334,6 +338,8 @@ const createJob = async (req, res) => {
       roleType: roleType || 'other',
       shortJobType,
       duration: { unit: duration.unit, value: Number(duration.value) },
+      startTime,
+      endTime,
       isPaid: isPaid === 'true' || isPaid === true,
       currency: currency || 'INR',
       stipend: stipend || 0,
@@ -458,7 +464,7 @@ const updateJob = async (req, res) => {
       'deadline', 'contactEmail', 'maxApplicants', 'isActive',
       'workplaceName', 'workplaceAddress', 'workplaceCity',
       'workplaceState', 'workplaceCountry',
-      'shortJobType',
+      'shortJobType', 'startTime', 'endTime',
     ];
 
     for (const field of allowedFields) {
@@ -477,6 +483,12 @@ const updateJob = async (req, res) => {
     }
     if (!job.shortJobType) job.shortJobType = 'short_term';
     if (!job.duration?.value) job.duration = { unit: 'days', value: 1 };
+    if (req.body.startTime !== undefined || req.body.endTime !== undefined) {
+      const validTime = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+      if (!validTime.test(job.startTime || '') || !validTime.test(job.endTime || '') || job.startTime === job.endTime) {
+        return res.status(400).json({ message: 'Valid and different start and end times are required.' });
+      }
+    }
 
     const coordinates = getJobCoordinatesFromBody(req.body);
     if (coordinates === null) {
@@ -768,7 +780,7 @@ const getMyApplications = async (req, res) => {
     const applications = await Application.find(query)
       .populate({
         path: 'jobPost',
-        select: 'title institutionName location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates roleType isPaid stipend deadline',
+        select: 'title institutionName location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates roleType shortJobType duration startTime endTime isPaid stipend deadline',
         populate: {
           path: 'postedBy',
           select: 'name profilePic openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant',

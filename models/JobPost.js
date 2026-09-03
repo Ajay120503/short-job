@@ -41,6 +41,16 @@ const jobPostSchema = new mongoose.Schema(
       unit: { type: String, enum: ['hours', 'days'], required: true },
       value: { type: Number, required: true, min: 1 },
     },
+    startTime: {
+      type: String,
+      match: [/^(?:[01]\d|2[0-3]):[0-5]\d$/, 'Start time must use HH:mm format'],
+      default: '',
+    },
+    endTime: {
+      type: String,
+      match: [/^(?:[01]\d|2[0-3]):[0-5]\d$/, 'End time must use HH:mm format'],
+      default: '',
+    },
     isPaid: {
       type: Boolean,
       default: false,
