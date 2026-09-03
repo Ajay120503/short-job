@@ -319,7 +319,7 @@ const startServer = async () => {
 
     server.listen(PORT, () => {
       console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
-      console.log(`API URL: http://localhost:${PORT}/api`);
+      console.log(`API URL:${process.env.CLIENT_URL ||'http://localhost:5000/api'}`);
       console.log(`Client URL: ${process.env.CLIENT_URL || 'http://localhost:5173'}`);
     });
 
