@@ -779,11 +779,42 @@ const updateTimeline = async (req, res) => {
     if (!Array.isArray(timeline)) {
       return res.status(400).json({ message: 'Timeline must be an array.' });
     }
+    if (timeline.length > 20) {
+      return res.status(400).json({ message: 'A timeline can contain up to 20 milestones.' });
+    }
+
+    const allowedTypes = new Set(['school', 'college', 'course', 'certification', 'internship', 'work', 'promotion', 'project', 'volunteer', 'award', 'achievement']);
+    const normalizedTimeline = timeline.map((entry = {}) => ({
+      year: String(entry.year || '').trim(),
+      endYear: String(entry.endYear || '').trim(),
+      title: String(entry.title || '').trim(),
+      institution: String(entry.institution || '').trim(),
+      type: allowedTypes.has(entry.type) ? entry.type : 'work',
+      description: String(entry.description || '').trim().slice(0, 500),
+      location: String(entry.location || '').trim().slice(0, 120),
+      skills: (Array.isArray(entry.skills) ? entry.skills : String(entry.skills || '').split(','))
+        .map((skill) => String(skill).trim().slice(0, 50))
+        .filter(Boolean)
+        .slice(0, 12),
+      link: String(entry.link || '').trim().slice(0, 500),
+    }));
+
+    const currentYear = new Date().getFullYear();
+    const invalidEntry = normalizedTimeline.find((entry) => {
+      const start = Number(entry.year);
+      const end = entry.endYear ? Number(entry.endYear) : null;
+      return !entry.title || !/^\d{4}$/.test(entry.year) || start < 1900 || start > currentYear + 10 ||
+        (entry.endYear && (!/^\d{4}$/.test(entry.endYear) || end < start || end > currentYear + 10)) ||
+        (entry.link && !/^https?:\/\//i.test(entry.link));
+    });
+    if (invalidEntry) {
+      return res.status(400).json({ message: 'Check milestone titles, years, and links before saving.' });
+    }
 
     const user = await User.findByIdAndUpdate(
       req.params.id,
-      { timeline },
-      { returnDocument: 'after' }
+      { timeline: normalizedTimeline },
+      { returnDocument: 'after', runValidators: true }
     );
 
     res.json({ success: true, user });
