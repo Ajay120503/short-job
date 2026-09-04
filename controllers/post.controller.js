@@ -90,7 +90,7 @@ const getFeed = async (req, res) => {
       .populate('author', USER_SIGNAL_SELECT)
       .populate({
         path: 'jobPost',
-        select: 'title institutionName institutionLogo roleType shortJobType duration startTime endTime isPaid stipend currency location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates deadline description image skillsRequired applicants postedBy',
+        select: 'title institutionName institutionLogo roleType shortJobType duration jobDate startTime endTime isPaid stipend currency location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates deadline description image skillsRequired applicants postedBy',
         populate: {
           path: 'postedBy',
           select: USER_SIGNAL_SELECT,
@@ -285,7 +285,7 @@ const updatePost = async (req, res) => {
       .populate('author', USER_SIGNAL_SELECT)
       .populate({
         path: 'jobPost',
-        select: 'title institutionName institutionLogo roleType shortJobType duration startTime endTime isPaid stipend currency location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates deadline description image skillsRequired applicants postedBy',
+        select: 'title institutionName institutionLogo roleType shortJobType duration jobDate startTime endTime isPaid stipend currency location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates deadline description image skillsRequired applicants postedBy',
         populate: {
           path: 'postedBy',
           select: USER_SIGNAL_SELECT,
@@ -443,7 +443,7 @@ const getSavedPosts = async (req, res) => {
       .populate('author', USER_SIGNAL_SELECT)
       .populate({
         path: 'jobPost',
-        select: 'title institutionName institutionLogo roleType shortJobType duration startTime endTime isPaid stipend currency location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates deadline description image skillsRequired applicants postedBy',
+        select: 'title institutionName institutionLogo roleType shortJobType duration jobDate startTime endTime isPaid stipend currency location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates deadline description image skillsRequired applicants postedBy',
         populate: {
           path: 'postedBy',
           select: USER_SIGNAL_SELECT,
@@ -474,7 +474,7 @@ const getPost = async (req, res) => {
       .populate('author', USER_SIGNAL_SELECT)
       .populate({
         path: 'jobPost',
-        select: 'title institutionName institutionLogo roleType shortJobType duration startTime endTime isPaid stipend currency location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates deadline description image skillsRequired applicants postedBy',
+        select: 'title institutionName institutionLogo roleType shortJobType duration jobDate startTime endTime isPaid stipend currency location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates deadline description image skillsRequired applicants postedBy',
         populate: {
           path: 'postedBy',
           select: USER_SIGNAL_SELECT,

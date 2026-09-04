@@ -39,7 +39,10 @@ const jobPostSchema = new mongoose.Schema(
     },
     duration: {
       unit: { type: String, enum: ['hours', 'days'], required: true },
-      value: { type: Number, required: true, min: 1 },
+      value: { type: Number, required: true, min: 0.25 },
+    },
+    jobDate: {
+      type: Date,
     },
     startTime: {
       type: String,

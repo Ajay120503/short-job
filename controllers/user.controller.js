@@ -552,7 +552,7 @@ const getUserPosts = async (req, res) => {
 
     const posts = await Post.find(query)
       .populate('author', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant')
-      .populate('jobPost', 'title institutionName roleType shortJobType duration startTime endTime isPaid stipend currency location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates deadline status')
+      .populate('jobPost', 'title institutionName roleType shortJobType duration jobDate startTime endTime isPaid stipend currency location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates deadline status')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);

@@ -305,20 +305,28 @@ const createJob = async (req, res) => {
       stipend, currency, location, requiredQualifications, skillsRequired,
       deadline, contactEmail, maxApplicants,
       workplaceName, workplaceAddress, workplaceCity, workplaceState,
-      workplaceCountry, shortJobType, durationUnit, durationValue, startTime, endTime,
+      workplaceCountry, shortJobType, durationUnit, durationValue, jobDate, startTime, endTime,
     } = req.body;
 
-    if (!title || !description || !deadline || !contactEmail) {
-      return res.status(400).json({ message: 'Title, description, deadline, and contact email are required.' });
+    if (!title || !description || !deadline || !jobDate || !contactEmail) {
+      return res.status(400).json({ message: 'Title, description, job date, deadline, and contact email are required.' });
     }
     const duration = req.body.duration && typeof req.body.duration === 'object'
       ? req.body.duration : { unit: durationUnit, value: Number(durationValue) };
-    if (!shortJobType || !['hours', 'days'].includes(duration.unit) || !Number.isInteger(Number(duration.value)) || Number(duration.value) < 1) {
-      return res.status(400).json({ message: 'Short job type and a positive whole-number duration are required.' });
+    if (!shortJobType || !['hours', 'days'].includes(duration.unit) || !Number.isFinite(Number(duration.value)) || Number(duration.value) <= 0) {
+      return res.status(400).json({ message: 'Short job type and a positive duration are required.' });
     }
     const validTime = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
     if (!validTime.test(startTime || '') || !validTime.test(endTime || '') || startTime === endTime) {
       return res.status(400).json({ message: 'Valid and different start and end times are required.' });
+    }
+    const parsedJobDate = new Date(jobDate);
+    const parsedDeadline = new Date(deadline);
+    if (Number.isNaN(parsedJobDate.getTime()) || Number.isNaN(parsedDeadline.getTime())) {
+      return res.status(400).json({ message: 'Please provide a valid job date and application deadline.' });
+    }
+    if (parsedDeadline > parsedJobDate) {
+      return res.status(400).json({ message: 'Application deadline cannot be after the job date.' });
     }
 
     let coordinates = getJobCoordinatesFromBody(req.body);
@@ -338,6 +346,7 @@ const createJob = async (req, res) => {
       roleType: roleType || 'other',
       shortJobType,
       duration: { unit: duration.unit, value: Number(duration.value) },
+      jobDate: parsedJobDate,
       startTime,
       endTime,
       isPaid: isPaid === 'true' || isPaid === true,
@@ -464,7 +473,7 @@ const updateJob = async (req, res) => {
       'deadline', 'contactEmail', 'maxApplicants', 'isActive',
       'workplaceName', 'workplaceAddress', 'workplaceCity',
       'workplaceState', 'workplaceCountry',
-      'shortJobType', 'startTime', 'endTime',
+      'shortJobType', 'jobDate', 'startTime', 'endTime',
     ];
 
     for (const field of allowedFields) {
@@ -478,7 +487,7 @@ const updateJob = async (req, res) => {
     }
     if (req.body.duration || req.body.durationUnit || req.body.durationValue) {
       const duration = req.body.duration && typeof req.body.duration === 'object' ? req.body.duration : { unit: req.body.durationUnit, value: Number(req.body.durationValue) };
-      if (!['hours', 'days'].includes(duration.unit) || !Number.isInteger(Number(duration.value)) || Number(duration.value) < 1) return res.status(400).json({ message: 'Duration must be a positive whole number of hours or days.' });
+      if (!['hours', 'days'].includes(duration.unit) || !Number.isFinite(Number(duration.value)) || Number(duration.value) <= 0) return res.status(400).json({ message: 'Duration must be a positive number of hours or days.' });
       job.duration = { unit: duration.unit, value: Number(duration.value) };
     }
     if (!job.shortJobType) job.shortJobType = 'short_term';
@@ -488,6 +497,14 @@ const updateJob = async (req, res) => {
       if (!validTime.test(job.startTime || '') || !validTime.test(job.endTime || '') || job.startTime === job.endTime) {
         return res.status(400).json({ message: 'Valid and different start and end times are required.' });
       }
+    }
+    if (req.body.jobDate !== undefined) {
+      const parsedJobDate = new Date(req.body.jobDate);
+      if (Number.isNaN(parsedJobDate.getTime())) return res.status(400).json({ message: 'Please provide a valid job date.' });
+      job.jobDate = parsedJobDate;
+    }
+    if (job.jobDate && job.deadline && new Date(job.deadline) > new Date(job.jobDate)) {
+      return res.status(400).json({ message: 'Application deadline cannot be after the job date.' });
     }
 
     const coordinates = getJobCoordinatesFromBody(req.body);
@@ -780,7 +797,7 @@ const getMyApplications = async (req, res) => {
     const applications = await Application.find(query)
       .populate({
         path: 'jobPost',
-        select: 'title institutionName location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates roleType shortJobType duration startTime endTime isPaid stipend deadline',
+        select: 'title institutionName location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates roleType shortJobType duration jobDate startTime endTime isPaid stipend deadline',
         populate: {
           path: 'postedBy',
           select: 'name profilePic openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant',
