@@ -71,12 +71,7 @@ const notifyModerationDecision = async ({ type, content, config, status, reason 
     link: notification.link,
     isRead: false,
     createdAt: notification.createdAt,
-  });
-
-  io.to(recipient.toString()).emit(approved ? 'content_approved' : 'content_rejected', {
-    type,
-    id: content._id,
-    reason,
+    silentToast: recipient.toString() === content.moderationMeta?.reviewedBy?.toString(),
   });
 };
 
@@ -636,6 +631,10 @@ const approveContent = async (req, res) => {
       return res.status(404).json({ message: 'Content not found.' });
     }
 
+    if (content.status === 'approved') {
+      return res.json({ success: true, content, alreadyApproved: true });
+    }
+
     content.status = 'approved';
     content.moderationMeta = {
       reviewedBy: req.user._id,
@@ -689,6 +688,10 @@ const rejectContent = async (req, res) => {
       return res.status(404).json({ message: 'Content not found.' });
     }
 
+    if (content.status === 'rejected') {
+      return res.json({ success: true, content, alreadyRejected: true });
+    }
+
     content.status = 'rejected';
     content.moderationMeta = {
       reviewedBy: req.user._id,
@@ -734,6 +737,7 @@ const runContentRuleCheck = async (req, res) => {
       return res.status(404).json({ message: 'Content not found.' });
     }
 
+    const previousStatus = content.status;
     const result = await runFakeDetectionRuleOnly(content, type);
     content.status = result.approved ? 'approved' : 'rejected';
     content.moderationMeta = {
@@ -754,7 +758,7 @@ const runContentRuleCheck = async (req, res) => {
     await syncLinkedJobFeedPost(type, content, content.status, content.moderationMeta);
 
     const settings = await readAdminSettings();
-    if (settings.notifyCreators) {
+    if (settings.notifyCreators && previousStatus !== content.status) {
       try {
         await notifyModerationDecision({
           type,
