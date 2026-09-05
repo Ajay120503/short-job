@@ -154,11 +154,35 @@ const getMessages = async (req, res) => {
     const messageFilter = getVisibleMessageFilter(conversation, req.user._id);
     const messages = await Message.find(messageFilter)
       .populate('sender', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant showOnlineStatus')
+      .populate({ path: 'replyTo', select: 'content type fileName sender', populate: { path: 'sender', select: 'name' } })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
     const total = await Message.countDocuments(messageFilter);
+    const unreadIds = messages
+      .filter((message) => {
+        const senderId = message.sender?._id || message.sender;
+        return senderId && senderId.toString() !== req.user._id.toString();
+      })
+      .map((message) => message._id);
+    if (unreadIds.length) {
+      await Message.updateMany(
+        { _id: { $in: unreadIds } },
+        { $addToSet: { readBy: req.user._id, deliveredTo: req.user._id } }
+      );
+      messages.forEach((message) => {
+        if (!(message.readBy || []).some((id) => id.toString() === req.user._id.toString())) message.readBy.push(req.user._id);
+        if (!(message.deliveredTo || []).some((id) => id.toString() === req.user._id.toString())) message.deliveredTo.push(req.user._id);
+      });
+      await Conversation.updateOne(
+        { _id: conversation._id },
+        { $set: { [`unreadCounts.${req.user._id.toString()}`]: 0 } }
+      );
+      try {
+        getIO().to(id).emit('messages_read', { messageIds: unreadIds, userId: req.user._id });
+      } catch (_) { /* Socket may be unavailable in tests. */ }
+    }
 
     res.json({
       success: true,
@@ -250,7 +274,7 @@ const createConversation = async (req, res) => {
 // @route   POST /api/messages
 const sendMessage = async (req, res) => {
   try {
-    const { conversationId, content, type } = req.body;
+    const { conversationId, content, type, replyTo } = req.body;
 
     if (!conversationId) {
       return res.status(400).json({ message: 'Conversation ID is required.' });
@@ -269,12 +293,21 @@ const sendMessage = async (req, res) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
+    if (replyTo) {
+      const repliedMessage = await Message.findOne({ _id: replyTo, conversation: conversationId });
+      if (!repliedMessage) {
+        return res.status(400).json({ message: 'The replied message is not part of this conversation.' });
+      }
+    }
+
     const messageData = {
       conversation: conversationId,
       sender: req.user._id,
       content: content || '',
       type: type || 'text',
       readBy: [req.user._id],
+      deliveredTo: [req.user._id],
+      replyTo: replyTo || null,
     };
 
     // Handle file upload
@@ -287,6 +320,7 @@ const sendMessage = async (req, res) => {
       messageData.fileUrl = result.secure_url;
       messageData.filePublicId = result.public_id;
       messageData.fileName = req.file.originalname;
+      messageData.fileMimeType = req.file.mimetype;
       messageData.type = req.file.mimetype.startsWith('image') ? 'image' : 'file';
     }
 
@@ -308,16 +342,21 @@ const sendMessage = async (req, res) => {
 
     await conversation.save();
 
+    const recipientId = conversation.participants.find(
+      (participant) => participant.toString() !== req.user._id.toString()
+    );
+    if (recipientId && getOnlineUsers().has(recipientId.toString())) {
+      message.deliveredTo.addToSet(recipientId);
+      await message.save();
+    }
+
     const populatedMessage = await Message.findById(message._id)
-      .populate('sender', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant showOnlineStatus');
+      .populate('sender', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant showOnlineStatus')
+      .populate({ path: 'replyTo', select: 'content type fileName sender', populate: { path: 'sender', select: 'name' } });
 
     // Emit socket events
     try {
       const io = getIO();
-      const recipientId = conversation.participants.find(
-        (p) => p.toString() !== req.user._id.toString()
-      );
-
       // Emit to conversation room (for active chat display)
       io.to(conversationId).emit('receive_message', populatedMessage);
 
@@ -351,18 +390,36 @@ const markAsRead = async (req, res) => {
       return res.status(404).json({ message: 'Message not found.' });
     }
 
-    if (!message.readBy.includes(req.user._id)) {
-      message.readBy.push(req.user._id);
-      await message.save();
+    const conversation = await Conversation.findById(message.conversation);
+    if (!conversation?.participants.some((participant) => participant.toString() === req.user._id.toString())) {
+      return res.status(403).json({ message: 'Access denied.' });
     }
+
+    let changed = false;
+    if (!message.readBy.some((id) => id.toString() === req.user._id.toString())) {
+      message.readBy.push(req.user._id);
+      changed = true;
+    }
+    if (!message.deliveredTo.some((id) => id.toString() === req.user._id.toString())) {
+      message.deliveredTo.push(req.user._id);
+      changed = true;
+    }
+    if (changed) await message.save();
 
     // Reset unread count in conversation
-    const conversation = await Conversation.findById(message.conversation);
     if (conversation) {
-      conversation.unreadCounts.set(req.user._id.toString(), 0);
-      await conversation.save();
+      await Conversation.updateOne(
+        { _id: conversation._id },
+        { $set: { [`unreadCounts.${req.user._id.toString()}`]: 0 } }
+      );
     }
 
+    try {
+      getIO().to(message.conversation.toString()).emit('message_read', {
+        messageId: message._id,
+        userId: req.user._id,
+      });
+    } catch (_) { /* Socket may be unavailable in tests. */ }
     res.json({ success: true, message: 'Marked as read.' });
   } catch (error) {
     console.error('Mark as read error:', error);
@@ -392,45 +449,111 @@ const reactToMessage = async (req, res) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
-    // Find existing reaction with this emoji
-    let existingReaction = message.reactions.find(r => r.emoji === emoji);
+    const userId = req.user._id;
+    const alreadyReacted = message.reactions.some(
+      (reaction) => reaction.emoji === emoji
+        && reaction.reactedBy.some((id) => id.toString() === userId.toString())
+    );
 
-    if (existingReaction) {
-      // Check if user already reacted with this emoji
-      const userIndex = existingReaction.reactedBy.findIndex(
-        uid => uid.toString() === req.user._id.toString()
+    if (alreadyReacted) {
+      await Message.updateOne(
+        { _id: message._id },
+        [{
+          $set: {
+            reactions: {
+              $filter: {
+                input: {
+                  $map: {
+                    input: { $ifNull: ['$reactions', []] },
+                    as: 'reaction',
+                    in: {
+                      $cond: [
+                        { $eq: ['$$reaction.emoji', emoji] },
+                        {
+                          $mergeObjects: [
+                            '$$reaction',
+                            {
+                              reactedBy: {
+                                $filter: {
+                                  input: { $ifNull: ['$$reaction.reactedBy', []] },
+                                  as: 'reactedUser',
+                                  cond: { $ne: ['$$reactedUser', userId] },
+                                },
+                              },
+                            },
+                          ],
+                        },
+                        '$$reaction',
+                      ],
+                    },
+                  },
+                },
+                as: 'reaction',
+                cond: { $gt: [{ $size: { $ifNull: ['$$reaction.reactedBy', []] } }, 0] },
+              },
+            },
+          },
+        }],
+        { updatePipeline: true }
       );
-
-      if (userIndex > -1) {
-        // Remove user's reaction (toggle off)
-        existingReaction.reactedBy.splice(userIndex, 1);
-        if (existingReaction.reactedBy.length === 0) {
-          message.reactions = message.reactions.filter(r => r.emoji !== emoji);
-        }
-      } else {
-        // Add user's reaction
-        existingReaction.reactedBy.push(req.user._id);
-      }
     } else {
-      // Create new reaction
-      message.reactions.push({
-        emoji,
-        reactedBy: [req.user._id],
-      });
+      await Message.updateOne(
+        { _id: message._id },
+        [{
+          $set: {
+            reactions: {
+              $cond: [
+                {
+                  $in: [
+                    emoji,
+                    {
+                      $map: {
+                        input: { $ifNull: ['$reactions', []] },
+                        as: 'reaction',
+                        in: '$$reaction.emoji',
+                      },
+                    },
+                  ],
+                },
+                {
+                  $map: {
+                    input: { $ifNull: ['$reactions', []] },
+                    as: 'reaction',
+                    in: {
+                      $cond: [
+                        { $eq: ['$$reaction.emoji', emoji] },
+                        {
+                          $mergeObjects: [
+                            '$$reaction',
+                            { reactedBy: { $setUnion: [{ $ifNull: ['$$reaction.reactedBy', []] }, [userId]] } },
+                          ],
+                        },
+                        '$$reaction',
+                      ],
+                    },
+                  },
+                },
+                { $concatArrays: [{ $ifNull: ['$reactions', []] }, [{ emoji, reactedBy: [userId] }]] },
+              ],
+            },
+          },
+        }],
+        { updatePipeline: true }
+      );
     }
 
-    await message.save();
+    const updatedMessage = await Message.findById(message._id).select('reactions conversation');
 
     // Emit via Socket.io
     try {
       const io = getIO();
-      io.to(message.conversation.toString()).emit('message_reaction', {
-        messageId: message._id,
-        reactions: message.reactions,
+      io.to(updatedMessage.conversation.toString()).emit('message_reaction', {
+        messageId: updatedMessage._id,
+        reactions: updatedMessage.reactions,
       });
     } catch (socketErr) {}
 
-    res.json({ success: true, reactions: message.reactions });
+    res.json({ success: true, reactions: updatedMessage.reactions });
   } catch (error) {
     console.error('React to message error:', error);
     res.status(500).json({ message: 'Server error.' });

@@ -18,7 +18,7 @@ const messageSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['text', 'image', 'file', 'deleted'],
+      enum: ['text', 'image', 'file', 'sticker', 'deleted'],
       default: 'text',
     },
     fileUrl: {
@@ -33,6 +33,16 @@ const messageSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    fileMimeType: { type: String, default: '' },
+    replyTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Message',
+      default: null,
+    },
+    deliveredTo: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    }],
     readBy: [
       {
         type: mongoose.Schema.Types.ObjectId,
