@@ -41,9 +41,9 @@ router.put('/users/:id/remove-admin', authMiddleware, requireSuperAdmin, removeA
 router.delete('/users/:id', authMiddleware, requireSuperAdmin, deleteUser);
 router.get('/settings', authMiddleware, requireAdmin, getAdminSettings);
 router.put('/settings', authMiddleware, requireSuperAdmin, updateAdminSettings);
-router.get('/login-records', authMiddleware, requireAdmin, getLoginRecords);
-router.get('/login-records/user/:userId', authMiddleware, requireAdmin, getUserLoginRecords);
-router.get('/login-records/:id', authMiddleware, requireAdmin, getLoginRecordDetail);
+router.get('/login-records', authMiddleware, requireSuperAdmin, getLoginRecords);
+router.get('/login-records/user/:userId', authMiddleware, requireSuperAdmin, getUserLoginRecords);
+router.get('/login-records/:id', authMiddleware, requireSuperAdmin, getLoginRecordDetail);
 router.delete('/login-records/:id', authMiddleware, requireSuperAdmin, deleteLoginRecord);
 router.get('/queue', authMiddleware, requireAdmin, getModerationQueue);
 router.get('/archive', authMiddleware, requireAdmin, getModerationArchive);
