@@ -196,6 +196,7 @@ const userSchema = new mongoose.Schema(
     }],
     openToOpportunities: { type: Boolean, default: false },
     showOnlineStatus: { type: Boolean, default: true },
+    locationAccessEnabled: { type: Boolean, default: false },
     loginAuditEnabled: { type: Boolean, default: true },
     profileThemeVariant: {
       type: String,

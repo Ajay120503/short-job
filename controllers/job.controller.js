@@ -173,6 +173,90 @@ const distanceKm = (aLat, aLng, bLat, bLng) => {
   return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 };
 
+const KNOWN_CITY_CENTERS = [
+  ['Pune', 18.5204, 73.8567], ['Pimpri-Chinchwad', 18.6298, 73.7997],
+  ['Chakan', 18.7606, 73.8635], ['Talegaon Dabhade', 18.735, 73.6752],
+  ['Lonavala', 18.7546, 73.4062], ['Khopoli', 18.7856, 73.3459],
+  ['Saswad', 18.3447, 74.031], ['Jejuri', 18.2769, 74.1607],
+  ['Shirur', 18.8276, 74.3747], ['Daund', 18.464, 74.5789],
+  ['Baramati', 18.1517, 74.5777], ['Bhor', 18.1486, 73.8434],
+  ['Wai', 17.9528, 73.8906], ['Satara', 17.6805, 74.0183],
+  ['Ahmednagar', 19.0948, 74.748], ['Mumbai', 19.076, 72.8777],
+  ['Navi Mumbai', 19.033, 73.0297], ['Thane', 19.2183, 72.9781],
+  ['Nashik', 19.9975, 73.7898], ['Aurangabad', 19.8762, 75.3433],
+  ['Nagpur', 21.1458, 79.0882], ['Kolhapur', 16.705, 74.2433],
+  ['Solapur', 17.6599, 75.9064], ['Sangli', 16.8524, 74.5815],
+  ['Delhi', 28.6139, 77.209], ['Noida', 28.5355, 77.391],
+  ['Gurugram', 28.4595, 77.0266], ['Ghaziabad', 28.6692, 77.4538],
+  ['Faridabad', 28.4089, 77.3178], ['Bengaluru', 12.9716, 77.5946],
+  ['Mysuru', 12.2958, 76.6394], ['Chennai', 13.0827, 80.2707],
+  ['Hyderabad', 17.385, 78.4867], ['Kolkata', 22.5726, 88.3639],
+  ['Ahmedabad', 23.0225, 72.5714], ['Surat', 21.1702, 72.8311],
+  ['Jaipur', 26.9124, 75.7873], ['Lucknow', 26.8467, 80.9462],
+  ['Kochi', 9.9312, 76.2673], ['Thiruvananthapuram', 8.5241, 76.9366],
+];
+
+const getKnownNearbyCities = (lat, lng, radiusKm) => KNOWN_CITY_CENTERS
+  .map(([name, cityLat, cityLng]) => ({
+    name,
+    distanceKm: distanceKm(lat, lng, cityLat, cityLng),
+  }))
+  .filter((city) => city.distanceKm <= radiusKm);
+
+// @desc    Get distinct job cities within 100 km of a location
+// @route   GET /api/jobs/nearby-cities
+const getNearbyJobCities = async (req, res) => {
+  try {
+    const lat = parseCoordinate(req.query.lat);
+    const lng = parseCoordinate(req.query.lng);
+    if (
+      lat === undefined || lng === undefined
+      || lat < -90 || lat > 90 || lng < -180 || lng > 180
+    ) {
+      return res.status(400).json({ message: 'Valid latitude and longitude are required.' });
+    }
+
+    const radiusKm = 100;
+    const jobs = await JobPost.find({
+        isActive: true,
+        status: 'approved',
+        deadline: { $gte: getJobDeadlineCutoff() },
+        workplaceCity: { $exists: true, $nin: ['', null] },
+        location_point: {
+          $geoWithin: { $centerSphere: [[lng, lat], radiusKm / 6371] },
+        },
+      }).select('workplaceCity location_point').lean();
+    const nearbyPlaces = getKnownNearbyCities(lat, lng, radiusKm);
+
+    const cities = new Map();
+    jobs.forEach((job) => {
+      const name = job.workplaceCity?.trim();
+      const point = job.location_point?.coordinates;
+      if (!name || point?.length !== 2) return;
+      const distance = distanceKm(lat, lng, point[1], point[0]);
+      const key = name.toLowerCase();
+      if (!cities.has(key) || distance < cities.get(key).distanceKm) {
+        cities.set(key, { name, distanceKm: Math.round(distance * 10) / 10 });
+      }
+    });
+    nearbyPlaces.forEach(({ name, distanceKm: distance }) => {
+      const key = name.toLowerCase();
+      if (!cities.has(key) || distance < cities.get(key).distanceKm) {
+        cities.set(key, { name, distanceKm: Math.round(distance * 10) / 10 });
+      }
+    });
+
+    res.json({
+      success: true,
+      radiusKm,
+      cities: [...cities.values()].sort((a, b) => a.distanceKm - b.distanceKm),
+    });
+  } catch (error) {
+    console.error('Get nearby job cities error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
 // @desc    Get all active jobs
 // @route   GET /api/jobs
 const getJobs = async (req, res) => {
@@ -1202,6 +1286,7 @@ const deleteQnA = async (req, res) => {
 
 module.exports = {
   getJobs,
+  getNearbyJobCities,
   createJob,
   getJob,
   updateJob,

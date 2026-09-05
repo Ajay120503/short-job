@@ -41,8 +41,11 @@ const updateCurrentLocation = async (req, res) => {
     } catch (_) { /* Coordinates are still useful if reverse geocoding is unavailable. */ }
 
     const currentLocation = { lat, lng, city, state, updatedAt: new Date() };
-    await User.findByIdAndUpdate(req.user._id, { currentLocation });
-    res.json({ success: true, currentLocation });
+    await User.findByIdAndUpdate(req.user._id, {
+      currentLocation,
+      locationAccessEnabled: true,
+    });
+    res.json({ success: true, currentLocation, locationAccessEnabled: true });
   } catch (error) {
     console.error('Update current location error:', error);
     res.status(500).json({ message: 'Server error.' });
@@ -263,7 +266,7 @@ const updateProfile = async (req, res) => {
       'address', 'city', 'state',
       'linkedinUrl', 'profession', 'isCurrentlyWorking',
       'currentPosition', 'currentCompany', 'previousWork',
-      'profileThemeVariant', 'showOnlineStatus', 'loginAuditEnabled',
+      'profileThemeVariant', 'showOnlineStatus', 'locationAccessEnabled', 'loginAuditEnabled',
     ];
 
     const arrayFields = ['skills', 'qualifications', 'interests'];
@@ -289,6 +292,7 @@ const updateProfile = async (req, res) => {
         updates[field] =
           field === 'isCurrentlyWorking' ||
           field === 'showOnlineStatus' ||
+          field === 'locationAccessEnabled' ||
           field === 'loginAuditEnabled'
             ? req.body[field] === true || req.body[field] === 'true'
             : req.body[field];
