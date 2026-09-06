@@ -69,11 +69,109 @@ const getVisibleMessageFilter = (conversation, userId) => {
   return filter;
 };
 
+const mergeLatestMapDates = (conversations, fieldName) => {
+  const merged = new Map();
+  conversations.forEach((conversation) => {
+    const mapValue = conversation[fieldName];
+    if (!mapValue) return;
+    const entries = typeof mapValue.entries === 'function'
+      ? [...mapValue.entries()]
+      : Object.entries(mapValue);
+    entries.forEach(([userId, value]) => {
+      const date = value ? new Date(value) : null;
+      if (!date || Number.isNaN(date.getTime())) return;
+      const current = merged.get(userId);
+      if (!current || date > current) merged.set(userId, date);
+    });
+  });
+  return merged;
+};
+
+const mergeUnreadCounts = (conversations) => {
+  const merged = new Map();
+  conversations.forEach((conversation) => {
+    const counts = normalizeUnreadCounts(conversation);
+    Object.entries(counts).forEach(([userId, count]) => {
+      merged.set(userId, (merged.get(userId) || 0) + (Number(count) || 0));
+    });
+  });
+  return merged;
+};
+
+const consolidateConversationGroup = async (conversations, conversationKey) => {
+  if (!conversations.length) return null;
+  if (conversations.length === 1) {
+    const conversation = conversations[0];
+    if (conversation.conversationKey !== conversationKey) {
+      conversation.conversationKey = conversationKey;
+      await conversation.save();
+    }
+    return conversation;
+  }
+
+  const conversationIds = conversations.map((conversation) => conversation._id);
+  const latestMessage = await Message.findOne({ conversation: { $in: conversationIds } })
+    .sort({ createdAt: -1 });
+  const canonical = latestMessage
+    ? conversations.find(
+        (conversation) => conversation._id.toString() === latestMessage.conversation.toString()
+      ) || conversations[0]
+    : conversations[0];
+  const duplicateIds = conversationIds.filter(
+    (id) => id.toString() !== canonical._id.toString()
+  );
+
+  // Re-parenting retains every message, attachment, reaction, reply, and receipt.
+  await Message.updateMany(
+    { conversation: { $in: duplicateIds } },
+    { $set: { conversation: canonical._id } }
+  );
+
+  canonical.conversationKey = conversationKey;
+  canonical.clearedAtBy = mergeLatestMapDates(conversations, 'clearedAtBy');
+  canonical.deletedAtBy = mergeLatestMapDates(conversations, 'deletedAtBy');
+  canonical.unreadCounts = mergeUnreadCounts(conversations);
+  if (latestMessage) {
+    canonical.lastMessage = latestMessage.content || latestMessage.fileName || 'File';
+    canonical.lastMessageTime = latestMessage.createdAt;
+    canonical.lastMessageSender = latestMessage.sender;
+  }
+  await canonical.save();
+  await Conversation.deleteMany({ _id: { $in: duplicateIds } });
+  return canonical;
+};
+
 // @desc    Get all conversations for a user
 // @route   GET /api/conversations
 const getConversations = async (req, res) => {
   try {
-    const conversations = await Conversation.find({
+    let conversations = await Conversation.find({
+      participants: req.user._id,
+    })
+      .sort({ updatedAt: -1 });
+
+    const groups = new Map();
+    conversations.forEach((conversation) => {
+      const otherId = conversation.participants
+        .find((participant) => participant.toString() !== req.user._id.toString())
+        ?.toString();
+      if (!otherId) return;
+      if (!groups.has(otherId)) groups.set(otherId, []);
+      groups.get(otherId).push(conversation);
+    });
+
+    for (const [otherId, group] of groups.entries()) {
+      if (group.length < 2) continue;
+      const key = getConversationKey(req.user._id, otherId);
+      await withConversationLock(key, async () => {
+        const currentGroup = await Conversation.find({
+          participants: { $all: [req.user._id, otherId], $size: 2 },
+        }).sort({ updatedAt: -1 });
+        await consolidateConversationGroup(currentGroup, key);
+      });
+    }
+
+    conversations = await Conversation.find({
       participants: req.user._id,
     })
       .populate('participants', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant showOnlineStatus')
@@ -237,16 +335,17 @@ const createConversation = async (req, res) => {
         .sort({ updatedAt: -1 })
         .populate('participants', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant showOnlineStatus');
 
-      const existingConversation = existingConversations.find((item) =>
+      const exactConversations = existingConversations.filter((item) =>
         hasExactlyParticipants(item, participantIds)
+      );
+      const existingConversation = await consolidateConversationGroup(
+        exactConversations,
+        conversationKey
       );
 
       if (existingConversation) {
-        if (existingConversation.conversationKey !== conversationKey) {
-          existingConversation.conversationKey = conversationKey;
-          await existingConversation.save();
-        }
-        return existingConversation;
+        return Conversation.findById(existingConversation._id)
+          .populate('participants', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant showOnlineStatus');
       }
 
       // Create new conversation
