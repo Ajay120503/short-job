@@ -3,8 +3,7 @@ const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upl
 const { getInitialModerationState, applyInitialRuleModeration } = require('../utils/adminSettings');
 const { sortByPriorityAndNewest } = require('../utils/contentOrdering');
 const {
-  MIN_STANDALONE_CONTENT_LENGTH,
-  MAX_SHORT_CREATION_TEXT_LENGTH,
+  STORY_CAPTION_MAX_LENGTH,
   cleanString,
   sendValidationError,
   sendCreateError,
@@ -22,14 +21,9 @@ const createStory = async (req, res) => {
     if (!req.file && !text) {
       return sendValidationError(res, { form: 'Add an image or some text to your story.' });
     }
-    if (text && text.length < MIN_STANDALONE_CONTENT_LENGTH) {
+    if (text.length > STORY_CAPTION_MAX_LENGTH) {
       return sendValidationError(res, {
-        storyText: `Story caption must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`,
-      });
-    }
-    if (text.length > MAX_SHORT_CREATION_TEXT_LENGTH) {
-      return sendValidationError(res, {
-        storyText: `Story caption cannot exceed ${MAX_SHORT_CREATION_TEXT_LENGTH} characters.`,
+        storyText: `Story caption cannot exceed ${STORY_CAPTION_MAX_LENGTH} characters.`,
       });
     }
 
@@ -48,6 +42,7 @@ const createStory = async (req, res) => {
         url: result.secure_url,
         publicId: result.public_id,
       };
+      storyData.mediaType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
     }
 
     const moderatedState = await applyInitialRuleModeration(storyData, 'story', moderationState);

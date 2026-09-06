@@ -10,6 +10,12 @@ const ALLOWED_IMAGE_TYPES = new Set([
   'image/gif',
   'image/webp',
 ]);
+const ALLOWED_STORY_TYPES = new Set([
+  ...ALLOWED_IMAGE_TYPES,
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+]);
 
 // File filter for images
 const imageFilter = (req, file, cb) => {
@@ -21,6 +27,14 @@ const imageFilter = (req, file, cb) => {
     error.field = file.fieldname;
     cb(error, false);
   }
+};
+
+const storyMediaFilter = (req, file, cb) => {
+  if (ALLOWED_STORY_TYPES.has(file.mimetype)) return cb(null, true);
+  const error = new Error('Upload a JPG, PNG, GIF, WebP, MP4, WebM, or MOV story file.');
+  error.code = 'INVALID_STORY_MEDIA_TYPE';
+  error.field = file.fieldname;
+  return cb(error, false);
 };
 
 // File filter for PDFs
@@ -64,16 +78,20 @@ const chatFileFilter = (req, file, cb) => {
 
 // File filter for profile uploads (images + PDF for resume)
 const profileFileFilter = (req, file, cb) => {
-  const allowedTypes = file.fieldname === 'resume' || file.fieldname === 'document'
-    ? [...ALLOWED_IMAGE_TYPES, 'application/pdf']
-    : [...ALLOWED_IMAGE_TYPES];
+  const allowedTypes = file.fieldname === 'resume'
+    ? ['application/pdf']
+    : file.fieldname === 'document'
+      ? [...ALLOWED_IMAGE_TYPES, 'application/pdf']
+      : [...ALLOWED_IMAGE_TYPES];
 
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
     const error = new Error(
-      file.fieldname === 'resume' || file.fieldname === 'document'
-        ? 'Upload a JPG, PNG, GIF, WebP, or PDF file.'
+      file.fieldname === 'resume'
+        ? 'Upload a PDF file only.'
+        : file.fieldname === 'document'
+          ? 'Upload a JPG, PNG, GIF, WebP, or PDF file.'
         : 'Upload a JPG, PNG, GIF, or WebP image.'
     );
     error.code = 'INVALID_PROFILE_FILE_TYPE';
@@ -86,7 +104,7 @@ const profileFileFilter = (req, file, cb) => {
 const uploadImage = multer({
   storage,
   fileFilter: imageFilter,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 5 * 1024 * 1024 },
 });
 
 const uploadPDF = multer({
@@ -110,6 +128,12 @@ const uploadPostImages = multer({
 const uploadCreationImage = multer({
   storage,
   fileFilter: imageFilter,
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+});
+
+const uploadStoryMedia = multer({
+  storage,
+  fileFilter: storyMediaFilter,
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
 });
 
@@ -167,7 +191,7 @@ const deleteFromCloudinary = async (publicIdOrUrl) => {
 const uploadProfile = multer({
   storage,
   fileFilter: profileFileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 5 * 1024 * 1024 },
 });
 
 module.exports = {
@@ -176,6 +200,7 @@ module.exports = {
   uploadChatFile,
   uploadPostImages,
   uploadCreationImage,
+  uploadStoryMedia,
   uploadProfile,
   uploadToCloudinary,
   deleteFromCloudinary,

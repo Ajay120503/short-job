@@ -1,14 +1,26 @@
 const cleanString = (value) => (typeof value === 'string' ? value.trim() : '');
-const MIN_STANDALONE_CONTENT_LENGTH = 5;
-const MAX_SHORT_CREATION_TEXT_LENGTH = 20;
-const PERSON_NAME_MIN_LENGTH = 5;
+const JOB_TEXT_MIN_LENGTH = 3;
+const JOB_TEXT_MAX_LENGTH = 50;
+const JOB_ADDRESS_MAX_LENGTH = 100;
+const JOB_DESCRIPTION_MAX_LENGTH = 200;
+const JOB_LIST_MAX_ITEMS = 5;
+const LIST_ITEM_MIN_LENGTH = 3;
+const LIST_ITEM_MAX_LENGTH = 20;
+const POST_TEXT_MIN_LENGTH = 20;
+const POST_TEXT_MAX_LENGTH = 500;
+const POST_TAG_MAX_ITEMS = 10;
+const STORY_CAPTION_MAX_LENGTH = 200;
+const PERSON_NAME_MIN_LENGTH = 3;
 const PERSON_NAME_MAX_LENGTH = 20;
 const PERSON_NAME_PATTERN = /^[\p{L}\p{M} .'-]+$/u;
 
-const isValidPersonName = (value) => {
+const isValidPersonName = (
+  value,
+  { minLength = PERSON_NAME_MIN_LENGTH, maxLength = PERSON_NAME_MAX_LENGTH } = {},
+) => {
   const name = cleanString(value);
   const letterCount = (name.match(/\p{L}/gu) || []).length;
-  return letterCount >= PERSON_NAME_MIN_LENGTH && name.length <= PERSON_NAME_MAX_LENGTH && PERSON_NAME_PATTERN.test(name);
+  return letterCount >= minLength && name.length <= maxLength && PERSON_NAME_PATTERN.test(name);
 };
 
 const sendValidationError = (res, errors) => res.status(400).json({
@@ -55,8 +67,17 @@ const parseLocalDate = (value) => {
 };
 
 module.exports = {
-  MIN_STANDALONE_CONTENT_LENGTH,
-  MAX_SHORT_CREATION_TEXT_LENGTH,
+  JOB_TEXT_MIN_LENGTH,
+  JOB_TEXT_MAX_LENGTH,
+  JOB_ADDRESS_MAX_LENGTH,
+  JOB_DESCRIPTION_MAX_LENGTH,
+  JOB_LIST_MAX_ITEMS,
+  LIST_ITEM_MIN_LENGTH,
+  LIST_ITEM_MAX_LENGTH,
+  POST_TEXT_MIN_LENGTH,
+  POST_TEXT_MAX_LENGTH,
+  POST_TAG_MAX_ITEMS,
+  STORY_CAPTION_MAX_LENGTH,
   PERSON_NAME_MIN_LENGTH,
   PERSON_NAME_MAX_LENGTH,
   PERSON_NAME_PATTERN,

@@ -11,9 +11,14 @@ const storySchema = new mongoose.Schema(
       url: { type: String, default: '' },
       publicId: { type: String, default: '' },
     },
+    mediaType: {
+      type: String,
+      enum: ['image', 'video'],
+      default: 'image',
+    },
     text: {
       type: String,
-      maxlength: [20, 'Story caption cannot exceed 20 characters'],
+      maxlength: [200, 'Story caption cannot exceed 200 characters'],
       default: '',
     },
     viewers: [

@@ -9,8 +9,13 @@ const { getInitialModerationState, applyInitialRuleModeration } = require('../ut
 const { pickPriorityPage, toId } = require('../utils/contentOrdering');
 const { getProfileCompletionStatus } = require('../utils/profileCompletion');
 const {
-  MIN_STANDALONE_CONTENT_LENGTH,
-  MAX_SHORT_CREATION_TEXT_LENGTH,
+  JOB_TEXT_MIN_LENGTH,
+  JOB_TEXT_MAX_LENGTH,
+  JOB_ADDRESS_MAX_LENGTH,
+  JOB_DESCRIPTION_MAX_LENGTH,
+  JOB_LIST_MAX_ITEMS,
+  LIST_ITEM_MIN_LENGTH,
+  LIST_ITEM_MAX_LENGTH,
   cleanString,
   sendValidationError,
   sendCreateError,
@@ -508,17 +513,14 @@ const createJob = async (req, res) => {
     const skills = normalizeListInput(req.body.skillsRequired);
     const errors = {};
 
-    if (title.length < MIN_STANDALONE_CONTENT_LENGTH) {
-      errors.title = `Job title must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`;
-    } else if (title.length > MAX_SHORT_CREATION_TEXT_LENGTH) {
-      errors.title = `Job title cannot exceed ${MAX_SHORT_CREATION_TEXT_LENGTH} characters.`;
+    if (title.length < JOB_TEXT_MIN_LENGTH) {
+      errors.title = `Job title must contain at least ${JOB_TEXT_MIN_LENGTH} characters.`;
+    } else if (title.length > JOB_TEXT_MAX_LENGTH) {
+      errors.title = `Job title cannot exceed ${JOB_TEXT_MAX_LENGTH} characters.`;
     }
-    if (description.length < MIN_STANDALONE_CONTENT_LENGTH) {
-      errors.description = `Description must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`;
-    }
-    else if (description.length > 5000) errors.description = 'Description cannot exceed 5000 characters.';
+    if (description.length > JOB_DESCRIPTION_MAX_LENGTH) errors.description = `Description cannot exceed ${JOB_DESCRIPTION_MAX_LENGTH} characters.`;
     if (!institutionName) errors.institutionName = 'Organization name is required.';
-    else if (institutionName.length > 150) errors.institutionName = 'Organization name cannot exceed 150 characters.';
+    else if (institutionName.length < JOB_TEXT_MIN_LENGTH || institutionName.length > JOB_TEXT_MAX_LENGTH) errors.institutionName = `Organization name must contain ${JOB_TEXT_MIN_LENGTH} to ${JOB_TEXT_MAX_LENGTH} characters.`;
 
     const roleTypes = ['teacher', 'professor', 'hod', 'principal', 'intern', 'volunteer', 'assistant', 'research', 'other'];
     const shortJobTypes = ['one_day_gig', 'few_hours', 'weekend_only', 'short_term', 'ongoing_part_time', 'full_time', 'internship', 'volunteer'];
@@ -549,23 +551,29 @@ const createJob = async (req, res) => {
     else if (parsedDeadline < today) errors.deadline = 'Application deadline cannot be in the past.';
     else if (!errors.jobDate && parsedDeadline > parsedJobDate) errors.deadline = 'Application deadline cannot be after the job date.';
 
-    if (!/^\S+@\S+\.\S+$/.test(contactEmail) || contactEmail.length > 254) errors.contactEmail = 'Enter a valid contact email address.';
+    const emailLocalPart = contactEmail.split('@')[0] || '';
+    if (!/^\S+@\S+\.\S+$/.test(contactEmail) || contactEmail.length > 254 || emailLocalPart.length < 2 || emailLocalPart.length > 20) errors.contactEmail = 'Enter a valid email with 2 to 20 characters before @.';
     if (!['onsite', 'remote', 'hybrid'].includes(location)) errors.location = 'Choose on-site, remote, or hybrid.';
     if (!['INR', 'USD'].includes(currency)) errors.currency = 'Choose a supported currency.';
     if (isPaid && (!Number.isFinite(stipend) || stipend <= 0)) errors.stipend = 'Enter a paid amount greater than zero.';
-    if (!Number.isInteger(maxApplicants) || maxApplicants < 0 || maxApplicants > 100000) errors.maxApplicants = 'Applicant limit must be a whole number between 0 and 100,000.';
+    if (!Number.isInteger(maxApplicants) || maxApplicants < 0 || maxApplicants > 100) errors.maxApplicants = 'Applicant limit must be a whole number between 0 and 100.';
 
-    const lengthLimits = {
-      workplaceName: [workplaceName, 150], workplaceAddress: [workplaceAddress, 300],
-      workplaceCity: [workplaceCity, 100], workplaceState: [workplaceState, 100],
-      workplaceCountry: [workplaceCountry, 100], requiredQualifications: [requiredQualifications, 2000],
+    const requiredJobText = {
+      workplaceName: [workplaceName, JOB_TEXT_MAX_LENGTH, 'Workplace name'],
+      workplaceAddress: [workplaceAddress, JOB_ADDRESS_MAX_LENGTH, 'Street address'],
+      workplaceCity: [workplaceCity, JOB_TEXT_MAX_LENGTH, 'City'],
+      workplaceState: [workplaceState, JOB_TEXT_MAX_LENGTH, 'State'],
+      workplaceCountry: [workplaceCountry, JOB_TEXT_MAX_LENGTH, 'Country'],
     };
-    for (const [field, [value, limit]] of Object.entries(lengthLimits)) {
-      if (value.length > limit) errors[field] = `${field.replace(/([A-Z])/g, ' $1')} cannot exceed ${limit} characters.`;
+    for (const [field, [value, limit, label]] of Object.entries(requiredJobText)) {
+      if (!value) errors[field] = `${label} is required.`;
+      else if (value.length < JOB_TEXT_MIN_LENGTH || value.length > limit) errors[field] = `${label} must contain ${JOB_TEXT_MIN_LENGTH} to ${limit} characters.`;
     }
-    if (location !== 'remote' && !workplaceCity) errors.workplaceCity = 'City is required for on-site and hybrid jobs.';
-    if (skills.length > 20) errors.skillsRequired = 'Add no more than 20 skills.';
-    else if (skills.some((skill) => skill.length > 50)) errors.skillsRequired = 'Each skill must be 50 characters or fewer.';
+    const qualifications = normalizeListInput(requiredQualifications);
+    if (qualifications.length > JOB_LIST_MAX_ITEMS) errors.requiredQualifications = `Add no more than ${JOB_LIST_MAX_ITEMS} qualifications.`;
+    else if (qualifications.some((item) => item.length < LIST_ITEM_MIN_LENGTH || item.length > LIST_ITEM_MAX_LENGTH)) errors.requiredQualifications = `Each qualification must contain ${LIST_ITEM_MIN_LENGTH} to ${LIST_ITEM_MAX_LENGTH} characters.`;
+    if (skills.length > JOB_LIST_MAX_ITEMS) errors.skillsRequired = `Add no more than ${JOB_LIST_MAX_ITEMS} skills.`;
+    else if (skills.some((skill) => skill.length < LIST_ITEM_MIN_LENGTH || skill.length > LIST_ITEM_MAX_LENGTH)) errors.skillsRequired = `Each skill must contain ${LIST_ITEM_MIN_LENGTH} to ${LIST_ITEM_MAX_LENGTH} characters.`;
 
     if (Object.keys(errors).length) return sendValidationError(res, errors);
 
@@ -598,7 +606,7 @@ const createJob = async (req, res) => {
       workplaceCity,
       workplaceState,
       workplaceCountry,
-      requiredQualifications,
+      requiredQualifications: qualifications.join(', '),
       skillsRequired: skills,
       deadline: parsedDeadline,
       contactEmail,
@@ -730,19 +738,49 @@ const updateJob = async (req, res) => {
 
     job.title = cleanString(job.title);
     job.description = cleanString(job.description);
-    if (job.title.length < MIN_STANDALONE_CONTENT_LENGTH || job.title.length > MAX_SHORT_CREATION_TEXT_LENGTH) {
+    if (job.title.length < JOB_TEXT_MIN_LENGTH || job.title.length > JOB_TEXT_MAX_LENGTH) {
       return sendValidationError(res, {
-        title: `Job title must contain ${MIN_STANDALONE_CONTENT_LENGTH} to ${MAX_SHORT_CREATION_TEXT_LENGTH} characters.`,
+        title: `Job title must contain ${JOB_TEXT_MIN_LENGTH} to ${JOB_TEXT_MAX_LENGTH} characters.`,
       });
     }
-    if (job.description.length < MIN_STANDALONE_CONTENT_LENGTH) {
-      return sendValidationError(res, {
-        description: `Description must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`,
-      });
+    if (job.description.length > JOB_DESCRIPTION_MAX_LENGTH) return sendValidationError(res, { description: `Description cannot exceed ${JOB_DESCRIPTION_MAX_LENGTH} characters.` });
+
+    const updateTextRules = {
+      institutionName: [JOB_TEXT_MAX_LENGTH, 'Organization name'],
+      workplaceName: [JOB_TEXT_MAX_LENGTH, 'Workplace name'],
+      workplaceAddress: [JOB_ADDRESS_MAX_LENGTH, 'Street address'],
+      workplaceCity: [JOB_TEXT_MAX_LENGTH, 'City'],
+      workplaceState: [JOB_TEXT_MAX_LENGTH, 'State'],
+      workplaceCountry: [JOB_TEXT_MAX_LENGTH, 'Country'],
+    };
+    for (const [field, [maxLength, label]] of Object.entries(updateTextRules)) {
+      job[field] = cleanString(job[field]);
+      if (job[field].length < JOB_TEXT_MIN_LENGTH || job[field].length > maxLength) {
+        return sendValidationError(res, { [field]: `${label} must contain ${JOB_TEXT_MIN_LENGTH} to ${maxLength} characters.` });
+      }
     }
+
+    const updateQualifications = normalizeListInput(job.requiredQualifications);
+    if (updateQualifications.length > JOB_LIST_MAX_ITEMS || updateQualifications.some((item) => item.length < LIST_ITEM_MIN_LENGTH || item.length > LIST_ITEM_MAX_LENGTH)) {
+      return sendValidationError(res, { requiredQualifications: `Use up to ${JOB_LIST_MAX_ITEMS} qualifications of ${LIST_ITEM_MIN_LENGTH} to ${LIST_ITEM_MAX_LENGTH} characters each.` });
+    }
+    job.requiredQualifications = updateQualifications.join(', ');
+
+    const updateEmailLocalPart = cleanString(job.contactEmail).split('@')[0] || '';
+    if (!/^\S+@\S+\.\S+$/.test(cleanString(job.contactEmail)) || updateEmailLocalPart.length < 2 || updateEmailLocalPart.length > 20) {
+      return sendValidationError(res, { contactEmail: 'Enter a valid email with 2 to 20 characters before @.' });
+    }
+    job.contactEmail = cleanString(job.contactEmail).toLowerCase();
+    if (!Number.isInteger(Number(job.maxApplicants)) || Number(job.maxApplicants) < 0 || Number(job.maxApplicants) > 100) {
+      return sendValidationError(res, { maxApplicants: 'Applicant limit must be a whole number between 0 and 100.' });
+    }
+    job.maxApplicants = Number(job.maxApplicants);
 
     if (req.body.skillsRequired !== undefined) {
       job.skillsRequired = normalizeListInput(req.body.skillsRequired);
+    }
+    if (job.skillsRequired.length > JOB_LIST_MAX_ITEMS || job.skillsRequired.some((item) => item.length < LIST_ITEM_MIN_LENGTH || item.length > LIST_ITEM_MAX_LENGTH)) {
+      return sendValidationError(res, { skillsRequired: `Use up to ${JOB_LIST_MAX_ITEMS} skills of ${LIST_ITEM_MIN_LENGTH} to ${LIST_ITEM_MAX_LENGTH} characters each.` });
     }
     if (req.body.duration || req.body.durationUnit || req.body.durationValue) {
       const duration = req.body.duration && typeof req.body.duration === 'object' ? req.body.duration : { unit: req.body.durationUnit, value: Number(req.body.durationValue) };

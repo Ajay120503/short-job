@@ -14,7 +14,14 @@ const postSchema = new mongoose.Schema(
     },
     text: {
       type: String,
-      maxlength: [20, 'Post text cannot exceed 20 characters'],
+      maxlength: [500, 'Post text cannot exceed 500 characters'],
+      validate: {
+        validator(value) {
+          const length = String(value || '').trim().length;
+          return this.type === 'job' ? length >= 3 : length >= 20;
+        },
+        message: 'Post text must contain at least 20 characters',
+      },
       default: '',
     },
     images: [
@@ -23,7 +30,7 @@ const postSchema = new mongoose.Schema(
         publicId: { type: String, required: true },
       },
     ],
-    tags: [{ type: String, trim: true, maxlength: [30, 'Each tag must be 30 characters or fewer'] }],
+    tags: [{ type: String, trim: true, minlength: [3, 'Each tag must contain at least 3 characters'], maxlength: [20, 'Each tag must be 20 characters or fewer'] }],
     likes: [
       {
         type: mongoose.Schema.Types.ObjectId,

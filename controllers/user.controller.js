@@ -6,15 +6,10 @@ const LoginRecord = require('../models/LoginRecord');
 const { getIO, getOnlineUsers } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 const {
-  PERSON_NAME_MIN_LENGTH,
-  PERSON_NAME_MAX_LENGTH,
   cleanString,
   isValidPersonName,
   sendValidationError,
 } = require('../utils/createValidation');
-
-const PROFILE_TEXT_MIN_LENGTH = 5;
-const PROFILE_TEXT_MAX_LENGTH = 20;
 
 const SELF_BADGES = [
   'student', 'teacher', 'professor', 'principal', 'hod',
@@ -336,36 +331,45 @@ const updateProfile = async (req, res) => {
     }
 
     const profileErrors = {};
+    const isProfileSetup = req.body.profileSetup === true || req.body.profileSetup === 'true';
     if (updates.name !== undefined) {
       if (!updates.name) profileErrors.name = 'Full name is required.';
-      else if (!isValidPersonName(updates.name)) {
-        profileErrors.name = `Use ${PERSON_NAME_MIN_LENGTH} to ${PERSON_NAME_MAX_LENGTH} characters: letters, spaces, apostrophes, periods, or hyphens only.`;
+      else if (!isValidPersonName(updates.name, { minLength: 3, maxLength: 50 })) {
+        profileErrors.name = 'Use 3 to 50 characters: letters, spaces, apostrophes, periods, or hyphens only.';
       }
     }
-    const profileTextLabels = {
-      bio: 'Bio',
-      institutionName: 'Organization name',
-      subject: 'Subject',
-      address: 'Address',
-      city: 'City',
-      state: 'State',
-      profession: 'Profession',
-      currentPosition: 'Current position',
-      currentCompany: 'Current workplace',
-      previousWork: 'Previous work',
+    const profileTextRules = {
+      bio: [0, 200, 'Bio'],
+      institutionName: [3, 50, 'Organization name'],
+      subject: [3, isProfileSetup ? 58 : 20, isProfileSetup ? 'Focus area' : 'Subject'],
+      address: [isProfileSetup ? 3 : 0, 100, 'Address'],
+      city: [2, isProfileSetup ? 10 : 20, 'City'],
+      state: [2, isProfileSetup ? 10 : 20, 'State'],
+      profession: [3, isProfileSetup ? 20 : 50, isProfileSetup ? 'Current role headline' : 'Profession'],
+      currentPosition: [3, 50, 'Current position'],
+      currentCompany: [3, 50, 'Current workplace'],
+      previousWork: [0, 100, 'Previous work'],
     };
-    for (const [field, label] of Object.entries(profileTextLabels)) {
+    for (const [field, [minLength, maxLength, label]] of Object.entries(profileTextRules)) {
       if (updates[field] === undefined || updates[field] === '') continue;
-      if (updates[field].length < PROFILE_TEXT_MIN_LENGTH) {
-        profileErrors[field] = `${label} must contain at least ${PROFILE_TEXT_MIN_LENGTH} characters.`;
-      } else if (updates[field].length > PROFILE_TEXT_MAX_LENGTH) {
-        profileErrors[field] = `${label} cannot exceed ${PROFILE_TEXT_MAX_LENGTH} characters.`;
+      if (minLength > 0 && updates[field].length < minLength) {
+        profileErrors[field] = `${label} must contain at least ${minLength} characters.`;
+      } else if (updates[field].length > maxLength) {
+        profileErrors[field] = `${label} cannot exceed ${maxLength} characters.`;
       }
+    }
+    if (isProfileSetup && updates.subject) {
+      const focusAreas = [...new Set(updates.subject.split(',').map(cleanString).filter(Boolean))];
+      if (focusAreas.length > 5) profileErrors.subject = 'Add no more than 5 focus areas.';
+      else if (focusAreas.some((value) => value.length < 3 || value.length > 10)) {
+        profileErrors.subject = 'Each focus area must contain 3 to 10 characters.';
+      }
+      updates.subject = focusAreas.join(', ');
     }
     const arrayRules = {
-      skills: [20, PROFILE_TEXT_MIN_LENGTH, PROFILE_TEXT_MAX_LENGTH, 'skill'],
-      qualifications: [20, PROFILE_TEXT_MIN_LENGTH, PROFILE_TEXT_MAX_LENGTH, 'qualification'],
-      interests: [20, PROFILE_TEXT_MIN_LENGTH, PROFILE_TEXT_MAX_LENGTH, 'interest'],
+      skills: [10, 3, 20, 'skill'],
+      qualifications: [10, 3, 20, 'qualification'],
+      interests: [10, 3, 20, 'interest'],
     };
     for (const [field, [maxItems, minLength, maxLength, label]] of Object.entries(arrayRules)) {
       const values = updates[field];
@@ -373,12 +377,6 @@ const updateProfile = async (req, res) => {
       if (values.length > maxItems) profileErrors[field] = `Add no more than ${maxItems} ${label}s.`;
       else if (values.some((value) => value.length < minLength)) profileErrors[field] = `Each ${label} must contain at least ${minLength} characters.`;
       else if (values.some((value) => value.length > maxLength)) profileErrors[field] = `Each ${label} must be ${maxLength} characters or fewer.`;
-    }
-    if (updates.isCurrentlyWorking === true && !updates.currentPosition) {
-      profileErrors.currentPosition = 'Current position is required when currently working.';
-    }
-    if (updates.isCurrentlyWorking === true && !updates.currentCompany) {
-      profileErrors.currentCompany = 'Current workplace is required when currently working.';
     }
     if (updates.experience !== undefined && updates.experience !== '') {
       const experience = Number(updates.experience);
@@ -395,12 +393,12 @@ const updateProfile = async (req, res) => {
       updates.age = undefined;
     } else if (updates.dateOfBirth) {
       const calculatedAge = calculateAgeFromDate(updates.dateOfBirth);
-      if (calculatedAge === undefined || calculatedAge < 18 || calculatedAge > 100) {
+      if (calculatedAge === undefined || calculatedAge < 18 || calculatedAge > 60) {
         return res.status(400).json({
           message: calculatedAge < 18
             ? 'You must be at least 18 years old to use ShortJob.'
-            : 'Please provide a valid date of birth for an age between 18 and 100.',
-          errors: { age: calculatedAge < 18 ? 'Minimum age is 18.' : 'Age must be between 18 and 100.' },
+            : 'Please provide a valid date of birth for an age between 18 and 60.',
+          errors: { age: calculatedAge < 18 ? 'Minimum age is 18.' : 'Age must be between 18 and 60.' },
         });
       }
       updates.age = calculatedAge;
@@ -408,10 +406,10 @@ const updateProfile = async (req, res) => {
       updates.age = undefined;
     } else if (updates.age !== undefined) {
       const age = Number(updates.age);
-      if (!Number.isFinite(age) || age < 18 || age > 100) {
+      if (!Number.isFinite(age) || age < 18 || age > 60) {
         return res.status(400).json({
-          message: 'Age must be between 18 and 100.',
-          errors: { age: 'Age must be between 18 and 100.' },
+          message: 'Age must be between 18 and 60.',
+          errors: { age: 'Age must be between 18 and 60.' },
         });
       }
       updates.age = age;

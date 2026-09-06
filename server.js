@@ -270,7 +270,8 @@ app.use((err, req, res, next) => {
   // Multer errors
   if (err.code === 'LIMIT_FILE_SIZE') {
     const isCreationUpload = /^\/api\/(?:posts|jobs|stories)\/?(?:\?|$)/.test(req.originalUrl || '');
-    const maxSize = req.originalUrl?.startsWith('/api/chat/') ? '20MB' : isCreationUpload ? '5MB' : '10MB';
+    const isProfileUpload = /^\/api\/users\//.test(req.originalUrl || '');
+    const maxSize = req.originalUrl?.startsWith('/api/chat/') ? '20MB' : (isCreationUpload || isProfileUpload) ? '5MB' : '10MB';
     return res.status(413).json({
       message: `File too large. Maximum size is ${maxSize}.`,
       errors: { [err.field || 'media']: `Choose a file under ${maxSize}.` },
@@ -299,6 +300,10 @@ app.use((err, req, res, next) => {
   }
 
   if (err.code === 'INVALID_IMAGE_TYPE') {
+    return res.status(400).json({ message: err.message, errors: { [err.field || 'image']: err.message } });
+  }
+
+  if (err.code === 'INVALID_STORY_MEDIA_TYPE') {
     return res.status(400).json({ message: err.message, errors: { [err.field || 'image']: err.message } });
   }
 

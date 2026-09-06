@@ -8,8 +8,11 @@ const { runFakeDetectionRuleOnly } = require('../utils/fakeDetectionRuleOnly');
 const { getInitialModerationState, applyInitialRuleModeration } = require('../utils/adminSettings');
 const { pickPriorityPage, toId } = require('../utils/contentOrdering');
 const {
-  MIN_STANDALONE_CONTENT_LENGTH,
-  MAX_SHORT_CREATION_TEXT_LENGTH,
+  POST_TEXT_MIN_LENGTH,
+  POST_TEXT_MAX_LENGTH,
+  POST_TAG_MAX_ITEMS,
+  LIST_ITEM_MIN_LENGTH,
+  LIST_ITEM_MAX_LENGTH,
   cleanString,
   sendValidationError,
   sendCreateError,
@@ -150,26 +153,17 @@ const createPost = async (req, res) => {
     const errors = {};
 
     if (!allowedTypes.includes(type)) errors.type = 'Choose a valid post type.';
-    if (!text && (!req.files || req.files.length === 0) && !['poll', 'event', 'resource_share'].includes(type)) {
-      errors.form = 'Add some text or at least one image.';
-    }
-    if (
-      text
-      && text.length < MIN_STANDALONE_CONTENT_LENGTH
-    ) {
-      errors.text = `Post text must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`;
-    }
-    if (text.length > MAX_SHORT_CREATION_TEXT_LENGTH) {
-      errors.text = `Post text cannot exceed ${MAX_SHORT_CREATION_TEXT_LENGTH} characters.`;
-    }
+    if (!text) errors.text = 'Post text is required.';
+    else if (text.length < POST_TEXT_MIN_LENGTH) errors.text = `Post text must contain at least ${POST_TEXT_MIN_LENGTH} characters.`;
+    else if (text.length > POST_TEXT_MAX_LENGTH) errors.text = `Post text cannot exceed ${POST_TEXT_MAX_LENGTH} characters.`;
     if (type === 'noticeboard' && !isInstitutionMember(req.user)) {
       errors.type = 'Noticeboard posts are available only to verified institution members.';
     }
 
     const rawTags = Array.isArray(req.body.tags) ? req.body.tags : String(req.body.tags || '').split(',');
     const normalizedTags = [...new Set(rawTags.map(cleanString).filter(Boolean))];
-    if (normalizedTags.length > 10) errors.tags = 'Use no more than 10 tags.';
-    if (normalizedTags.some((tag) => tag.length > 30)) errors.tags = 'Each tag must be 30 characters or fewer.';
+    if (normalizedTags.length > POST_TAG_MAX_ITEMS) errors.tags = `Use no more than ${POST_TAG_MAX_ITEMS} tags.`;
+    if (normalizedTags.some((tag) => tag.length < LIST_ITEM_MIN_LENGTH || tag.length > LIST_ITEM_MAX_LENGTH)) errors.tags = `Each tag must contain ${LIST_ITEM_MIN_LENGTH} to ${LIST_ITEM_MAX_LENGTH} characters.`;
 
     if (Object.keys(errors).length) return sendValidationError(res, errors);
 
@@ -281,9 +275,9 @@ const updatePost = async (req, res) => {
     // Update text
     if (text !== undefined) {
       post.text = cleanString(text);
-      if (post.text.length > MAX_SHORT_CREATION_TEXT_LENGTH) {
+      if (!post.text || post.text.length < POST_TEXT_MIN_LENGTH || post.text.length > POST_TEXT_MAX_LENGTH) {
         return sendValidationError(res, {
-          text: `Post text cannot exceed ${MAX_SHORT_CREATION_TEXT_LENGTH} characters.`,
+          text: `Post text must contain ${POST_TEXT_MIN_LENGTH} to ${POST_TEXT_MAX_LENGTH} characters.`,
         });
       }
     }
@@ -304,9 +298,9 @@ const updatePost = async (req, res) => {
     if (tags !== undefined) {
       const rawTags = Array.isArray(tags) ? tags : String(tags).split(',');
       const normalizedTags = [...new Set(rawTags.map(cleanString).filter(Boolean))];
-      if (normalizedTags.length > 10) return sendValidationError(res, { tags: 'Use no more than 10 tags.' });
-      if (normalizedTags.some((tag) => tag.length > 30)) {
-        return sendValidationError(res, { tags: 'Each tag must be 30 characters or fewer.' });
+      if (normalizedTags.length > POST_TAG_MAX_ITEMS) return sendValidationError(res, { tags: `Use no more than ${POST_TAG_MAX_ITEMS} tags.` });
+      if (normalizedTags.some((tag) => tag.length < LIST_ITEM_MIN_LENGTH || tag.length > LIST_ITEM_MAX_LENGTH)) {
+        return sendValidationError(res, { tags: `Each tag must contain ${LIST_ITEM_MIN_LENGTH} to ${LIST_ITEM_MAX_LENGTH} characters.` });
       }
       post.tags = normalizedTags;
     }
@@ -346,10 +340,10 @@ const updatePost = async (req, res) => {
     post.text = cleanString(post.text);
     if (
       post.text
-      && post.text.length < MIN_STANDALONE_CONTENT_LENGTH
+      && post.text.length < POST_TEXT_MIN_LENGTH
     ) {
       return sendValidationError(res, {
-        text: `Post text must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`,
+        text: `Post text must contain at least ${POST_TEXT_MIN_LENGTH} characters.`,
       });
     }
 

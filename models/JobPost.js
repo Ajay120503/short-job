@@ -11,7 +11,8 @@ const jobPostSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Organization name is required'],
       trim: true,
-      maxlength: [150, 'Organization name cannot exceed 150 characters'],
+      minlength: [3, 'Organization name must contain at least 3 characters'],
+      maxlength: [50, 'Organization name cannot exceed 50 characters'],
     },
     institutionLogo: {
       url: { type: String, default: '' },
@@ -21,14 +22,13 @@ const jobPostSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Job title is required'],
       trim: true,
-      minlength: [5, 'Job title must contain at least 5 characters'],
-      maxlength: [20, 'Job title cannot exceed 20 characters'],
+      minlength: [3, 'Job title must contain at least 3 characters'],
+      maxlength: [50, 'Job title cannot exceed 50 characters'],
     },
     description: {
       type: String,
-      required: [true, 'Description is required'],
-      minlength: [5, 'Description must contain at least 5 characters'],
-      maxlength: [5000, 'Description cannot exceed 5000 characters'],
+      maxlength: [200, 'Description cannot exceed 200 characters'],
+      default: '',
     },
     roleType: {
       type: String,
@@ -77,40 +77,45 @@ const jobPostSchema = new mongoose.Schema(
     },
     workplaceName: {
       type: String,
+      required: [true, 'Workplace name is required'],
       trim: true,
-      maxlength: [150, 'Workplace name cannot exceed 150 characters'],
-      default: '',
+      minlength: [3, 'Workplace name must contain at least 3 characters'],
+      maxlength: [50, 'Workplace name cannot exceed 50 characters'],
     },
     workplaceAddress: {
       type: String,
+      required: [true, 'Street address is required'],
       trim: true,
-      maxlength: [300, 'Workplace address cannot exceed 300 characters'],
-      default: '',
+      minlength: [3, 'Street address must contain at least 3 characters'],
+      maxlength: [100, 'Street address cannot exceed 100 characters'],
     },
     workplaceCity: {
       type: String,
+      required: [true, 'City is required'],
       trim: true,
-      maxlength: [100, 'Workplace city cannot exceed 100 characters'],
-      default: '',
+      minlength: [3, 'City must contain at least 3 characters'],
+      maxlength: [50, 'City cannot exceed 50 characters'],
     },
     workplaceState: {
       type: String,
+      required: [true, 'State is required'],
       trim: true,
-      maxlength: [100, 'Workplace state cannot exceed 100 characters'],
-      default: '',
+      minlength: [3, 'State must contain at least 3 characters'],
+      maxlength: [50, 'State cannot exceed 50 characters'],
     },
     workplaceCountry: {
       type: String,
+      required: [true, 'Country is required'],
       trim: true,
-      maxlength: [100, 'Workplace country cannot exceed 100 characters'],
-      default: '',
+      minlength: [3, 'Country must contain at least 3 characters'],
+      maxlength: [50, 'Country cannot exceed 50 characters'],
     },
     requiredQualifications: {
       type: String,
-      maxlength: [2000, 'Required qualifications cannot exceed 2000 characters'],
+      maxlength: [108, 'Required qualifications cannot exceed 5 entries of 20 characters'],
       default: '',
     },
-    skillsRequired: [{ type: String, trim: true, maxlength: [50, 'Each skill must be 50 characters or fewer'] }],
+    skillsRequired: [{ type: String, trim: true, minlength: [3, 'Each skill must contain at least 3 characters'], maxlength: [20, 'Each skill must be 20 characters or fewer'] }],
     deadline: {
       type: Date,
       required: [true, 'Application deadline is required'],
@@ -120,6 +125,13 @@ const jobPostSchema = new mongoose.Schema(
       required: [true, 'Contact email is required'],
       maxlength: [254, 'Contact email cannot exceed 254 characters'],
       match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email'],
+      validate: {
+        validator: (value) => {
+          const local = String(value || '').split('@')[0];
+          return local.length >= 2 && local.length <= 20;
+        },
+        message: 'Email must contain 2 to 20 characters before @',
+      },
     },
     image: {
       url: { type: String, default: '' },
@@ -128,7 +140,7 @@ const jobPostSchema = new mongoose.Schema(
     maxApplicants: {
       type: Number,
       min: [0, 'Applicant limit cannot be negative'],
-      max: [100000, 'Applicant limit cannot exceed 100,000'],
+      max: [100, 'Applicant limit cannot exceed 100'],
       default: 0,
     },
     applicants: [

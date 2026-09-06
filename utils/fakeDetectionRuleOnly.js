@@ -88,7 +88,7 @@ const EDUCATION_TERMS = [
   'business',
 ];
 
-const JOB_REQUIRED_FIELDS = ['title', 'description', 'deadline', 'contactEmail'];
+const JOB_REQUIRED_FIELDS = ['title', 'deadline', 'contactEmail'];
 const TRUSTED_EMAIL_DOMAINS = ['.edu', '.ac.in', '.org', '.gov', '.school'];
 const PERSONAL_EMAIL_DOMAINS = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'proton.me'];
 
