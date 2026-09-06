@@ -9,6 +9,7 @@ const { getInitialModerationState, applyInitialRuleModeration } = require('../ut
 const { pickPriorityPage, toId } = require('../utils/contentOrdering');
 const {
   MIN_STANDALONE_CONTENT_LENGTH,
+  MAX_SHORT_CREATION_TEXT_LENGTH,
   cleanString,
   sendValidationError,
   sendCreateError,
@@ -155,12 +156,12 @@ const createPost = async (req, res) => {
     if (
       text
       && text.length < MIN_STANDALONE_CONTENT_LENGTH
-      && (!req.files || req.files.length === 0)
-      && !['poll', 'event', 'resource_share'].includes(type)
     ) {
-      errors.text = `Text-only posts must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`;
+      errors.text = `Post text must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`;
     }
-    if (text.length > 2000) errors.text = 'Post text cannot exceed 2000 characters.';
+    if (text.length > MAX_SHORT_CREATION_TEXT_LENGTH) {
+      errors.text = `Post text cannot exceed ${MAX_SHORT_CREATION_TEXT_LENGTH} characters.`;
+    }
     if (type === 'noticeboard' && !isInstitutionMember(req.user)) {
       errors.type = 'Noticeboard posts are available only to verified institution members.';
     }
@@ -280,8 +281,10 @@ const updatePost = async (req, res) => {
     // Update text
     if (text !== undefined) {
       post.text = cleanString(text);
-      if (post.text.length > 2000) {
-        return sendValidationError(res, { text: 'Post text cannot exceed 2000 characters.' });
+      if (post.text.length > MAX_SHORT_CREATION_TEXT_LENGTH) {
+        return sendValidationError(res, {
+          text: `Post text cannot exceed ${MAX_SHORT_CREATION_TEXT_LENGTH} characters.`,
+        });
       }
     }
 
@@ -342,12 +345,11 @@ const updatePost = async (req, res) => {
 
     post.text = cleanString(post.text);
     if (
-      !['poll', 'event', 'resource_share'].includes(post.type)
-      && post.images.length === 0
+      post.text
       && post.text.length < MIN_STANDALONE_CONTENT_LENGTH
     ) {
       return sendValidationError(res, {
-        text: `Text-only posts must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`,
+        text: `Post text must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`,
       });
     }
 

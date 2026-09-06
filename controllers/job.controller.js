@@ -10,6 +10,7 @@ const { pickPriorityPage, toId } = require('../utils/contentOrdering');
 const { getProfileCompletionStatus } = require('../utils/profileCompletion');
 const {
   MIN_STANDALONE_CONTENT_LENGTH,
+  MAX_SHORT_CREATION_TEXT_LENGTH,
   cleanString,
   sendValidationError,
   sendCreateError,
@@ -507,8 +508,11 @@ const createJob = async (req, res) => {
     const skills = normalizeListInput(req.body.skillsRequired);
     const errors = {};
 
-    if (title.length < 3) errors.title = 'Job title must contain at least 3 characters.';
-    else if (title.length > 200) errors.title = 'Job title cannot exceed 200 characters.';
+    if (title.length < MIN_STANDALONE_CONTENT_LENGTH) {
+      errors.title = `Job title must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`;
+    } else if (title.length > MAX_SHORT_CREATION_TEXT_LENGTH) {
+      errors.title = `Job title cannot exceed ${MAX_SHORT_CREATION_TEXT_LENGTH} characters.`;
+    }
     if (description.length < MIN_STANDALONE_CONTENT_LENGTH) {
       errors.description = `Description must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`;
     }
@@ -726,8 +730,10 @@ const updateJob = async (req, res) => {
 
     job.title = cleanString(job.title);
     job.description = cleanString(job.description);
-    if (job.title.length < 3) {
-      return sendValidationError(res, { title: 'Job title must contain at least 3 characters.' });
+    if (job.title.length < MIN_STANDALONE_CONTENT_LENGTH || job.title.length > MAX_SHORT_CREATION_TEXT_LENGTH) {
+      return sendValidationError(res, {
+        title: `Job title must contain ${MIN_STANDALONE_CONTENT_LENGTH} to ${MAX_SHORT_CREATION_TEXT_LENGTH} characters.`,
+      });
     }
     if (job.description.length < MIN_STANDALONE_CONTENT_LENGTH) {
       return sendValidationError(res, {

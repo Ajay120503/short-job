@@ -4,6 +4,7 @@ const { getInitialModerationState, applyInitialRuleModeration } = require('../ut
 const { sortByPriorityAndNewest } = require('../utils/contentOrdering');
 const {
   MIN_STANDALONE_CONTENT_LENGTH,
+  MAX_SHORT_CREATION_TEXT_LENGTH,
   cleanString,
   sendValidationError,
   sendCreateError,
@@ -21,12 +22,16 @@ const createStory = async (req, res) => {
     if (!req.file && !text) {
       return sendValidationError(res, { form: 'Add an image or some text to your story.' });
     }
-    if (!req.file && text.length < MIN_STANDALONE_CONTENT_LENGTH) {
+    if (text && text.length < MIN_STANDALONE_CONTENT_LENGTH) {
       return sendValidationError(res, {
-        storyText: `Text-only stories must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`,
+        storyText: `Story caption must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`,
       });
     }
-    if (text.length > 200) return sendValidationError(res, { storyText: 'Story caption cannot exceed 200 characters.' });
+    if (text.length > MAX_SHORT_CREATION_TEXT_LENGTH) {
+      return sendValidationError(res, {
+        storyText: `Story caption cannot exceed ${MAX_SHORT_CREATION_TEXT_LENGTH} characters.`,
+      });
+    }
 
     const moderationState = await getInitialModerationState('story');
 

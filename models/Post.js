@@ -14,7 +14,7 @@ const postSchema = new mongoose.Schema(
     },
     text: {
       type: String,
-      maxlength: [2000, 'Post text cannot exceed 2000 characters'],
+      maxlength: [20, 'Post text cannot exceed 20 characters'],
       default: '',
     },
     images: [

@@ -1,5 +1,6 @@
 const cleanString = (value) => (typeof value === 'string' ? value.trim() : '');
-const MIN_STANDALONE_CONTENT_LENGTH = 20;
+const MIN_STANDALONE_CONTENT_LENGTH = 5;
+const MAX_SHORT_CREATION_TEXT_LENGTH = 20;
 const PERSON_NAME_MAX_LENGTH = 20;
 const PERSON_NAME_PATTERN = /^[\p{L}\p{M} .'-]+$/u;
 
@@ -54,6 +55,7 @@ const parseLocalDate = (value) => {
 
 module.exports = {
   MIN_STANDALONE_CONTENT_LENGTH,
+  MAX_SHORT_CREATION_TEXT_LENGTH,
   PERSON_NAME_MAX_LENGTH,
   PERSON_NAME_PATTERN,
   cleanString,
