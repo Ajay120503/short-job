@@ -8,7 +8,13 @@ const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upl
 const { getInitialModerationState, applyInitialRuleModeration } = require('../utils/adminSettings');
 const { pickPriorityPage, toId } = require('../utils/contentOrdering');
 const { getProfileCompletionStatus } = require('../utils/profileCompletion');
-const { cleanString, sendValidationError, sendCreateError, parseLocalDate } = require('../utils/createValidation');
+const {
+  MIN_STANDALONE_CONTENT_LENGTH,
+  cleanString,
+  sendValidationError,
+  sendCreateError,
+  parseLocalDate,
+} = require('../utils/createValidation');
 
 const hasActiveBadge = (user, badgeType) =>
   (user.badges || []).some((badge) => badge.type === badgeType && badge.isActive !== false);
@@ -503,7 +509,9 @@ const createJob = async (req, res) => {
 
     if (title.length < 3) errors.title = 'Job title must contain at least 3 characters.';
     else if (title.length > 200) errors.title = 'Job title cannot exceed 200 characters.';
-    if (description.length < 30) errors.description = 'Description must contain at least 30 characters.';
+    if (description.length < MIN_STANDALONE_CONTENT_LENGTH) {
+      errors.description = `Description must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`;
+    }
     else if (description.length > 5000) errors.description = 'Description cannot exceed 5000 characters.';
     if (!institutionName) errors.institutionName = 'Organization name is required.';
     else if (institutionName.length > 150) errors.institutionName = 'Organization name cannot exceed 150 characters.';
@@ -716,6 +724,17 @@ const updateJob = async (req, res) => {
       }
     }
 
+    job.title = cleanString(job.title);
+    job.description = cleanString(job.description);
+    if (job.title.length < 3) {
+      return sendValidationError(res, { title: 'Job title must contain at least 3 characters.' });
+    }
+    if (job.description.length < MIN_STANDALONE_CONTENT_LENGTH) {
+      return sendValidationError(res, {
+        description: `Description must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`,
+      });
+    }
+
     if (req.body.skillsRequired !== undefined) {
       job.skillsRequired = normalizeListInput(req.body.skillsRequired);
     }
@@ -777,7 +796,7 @@ const updateJob = async (req, res) => {
     res.json({ success: true, job });
   } catch (error) {
     console.error('Update job error:', error);
-    res.status(500).json({ message: 'Server error.' });
+    return sendCreateError(res, error, 'The job could not be updated. Please try again.');
   }
 };
 

@@ -2,7 +2,12 @@ const Story = require('../models/Story');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 const { getInitialModerationState, applyInitialRuleModeration } = require('../utils/adminSettings');
 const { sortByPriorityAndNewest } = require('../utils/contentOrdering');
-const { cleanString, sendValidationError, sendCreateError } = require('../utils/createValidation');
+const {
+  MIN_STANDALONE_CONTENT_LENGTH,
+  cleanString,
+  sendValidationError,
+  sendCreateError,
+} = require('../utils/createValidation');
 
 const USER_SIGNAL_SELECT = 'name profilePic badges role category institutionName institutionPic openToOpportunities isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant';
 
@@ -15,6 +20,11 @@ const createStory = async (req, res) => {
     const text = cleanString(req.body.text);
     if (!req.file && !text) {
       return sendValidationError(res, { form: 'Add an image or some text to your story.' });
+    }
+    if (!req.file && text.length < MIN_STANDALONE_CONTENT_LENGTH) {
+      return sendValidationError(res, {
+        storyText: `Text-only stories must contain at least ${MIN_STANDALONE_CONTENT_LENGTH} characters.`,
+      });
     }
     if (text.length > 200) return sendValidationError(res, { storyText: 'Story caption cannot exceed 200 characters.' });
 

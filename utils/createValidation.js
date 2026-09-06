@@ -1,4 +1,5 @@
 const cleanString = (value) => (typeof value === 'string' ? value.trim() : '');
+const MIN_STANDALONE_CONTENT_LENGTH = 20;
 
 const sendValidationError = (res, errors) => res.status(400).json({
   message: Object.values(errors)[0] || 'Please correct the highlighted fields.',
@@ -43,4 +44,11 @@ const parseLocalDate = (value) => {
     : null;
 };
 
-module.exports = { cleanString, sendValidationError, sendCreateError, isHttpUrl, parseLocalDate };
+module.exports = {
+  MIN_STANDALONE_CONTENT_LENGTH,
+  cleanString,
+  sendValidationError,
+  sendCreateError,
+  isHttpUrl,
+  parseLocalDate,
+};
