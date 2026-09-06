@@ -71,7 +71,7 @@ const globalSearch = async (req, res) => {
     ]);
 
     const queryWords = query.toLowerCase().split(/\s+/).filter(Boolean);
-    const chats = conversations
+    const matchingChats = conversations
       .map((conversation) => {
         const participant = (conversation.participants || []).find(
           (item) => item?._id?.toString() !== req.user._id.toString()
@@ -88,8 +88,19 @@ const globalSearch = async (req, res) => {
           conversation.lastMessage,
         ].filter(Boolean).join(' ').toLowerCase();
         return queryWords.every((word) => searchable.includes(word));
-      })
-      .slice(0, 8);
+      });
+
+    // Legacy data can contain more than one conversation document for the
+    // same two users. The query is newest-first, so retain one result per
+    // participant instead of showing one row for every duplicate/message.
+    const chatsByParticipant = new Map();
+    matchingChats.forEach((conversation) => {
+      const participantId = conversation.participant._id.toString();
+      if (!chatsByParticipant.has(participantId)) {
+        chatsByParticipant.set(participantId, conversation);
+      }
+    });
+    const chats = [...chatsByParticipant.values()].slice(0, 8);
 
     res.json({ success: true, query, results: { users, jobs, posts, chats } });
   } catch (error) {
