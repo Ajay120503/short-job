@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const JobPost = require('../models/JobPost');
 const Post = require('../models/Post');
+const Conversation = require('../models/Conversation');
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -16,13 +17,13 @@ const globalSearch = async (req, res) => {
   try {
     const query = String(req.query.q || '').trim();
     if (query.length < 2) {
-      return res.json({ success: true, query, results: { users: [], jobs: [], posts: [] } });
+      return res.json({ success: true, query, results: { users: [], jobs: [], posts: [], chats: [] } });
     }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const [users, jobs, posts] = await Promise.all([
+    const [users, jobs, posts, conversations] = await Promise.all([
       User.find({
         isActive: { $ne: false },
         isBlocked: { $ne: true },
@@ -58,9 +59,39 @@ const globalSearch = async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(8)
         .lean(),
+      Conversation.find({
+        participants: req.user._id,
+        [`deletedAtBy.${req.user._id.toString()}`]: { $exists: false },
+      })
+        .select('participants lastMessage lastMessageTime')
+        .populate('participants', 'name profilePic role category institutionName')
+        .sort({ lastMessageTime: -1 })
+        .limit(50)
+        .lean(),
     ]);
 
-    res.json({ success: true, query, results: { users, jobs, posts } });
+    const queryWords = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const chats = conversations
+      .map((conversation) => {
+        const participant = (conversation.participants || []).find(
+          (item) => item?._id?.toString() !== req.user._id.toString()
+        );
+        return participant ? { ...conversation, participant } : null;
+      })
+      .filter(Boolean)
+      .filter((conversation) => {
+        const searchable = [
+          conversation.participant.name,
+          conversation.participant.role,
+          conversation.participant.category,
+          conversation.participant.institutionName,
+          conversation.lastMessage,
+        ].filter(Boolean).join(' ').toLowerCase();
+        return queryWords.every((word) => searchable.includes(word));
+      })
+      .slice(0, 8);
+
+    res.json({ success: true, query, results: { users, jobs, posts, chats } });
   } catch (error) {
     console.error('Global search error:', error);
     res.status(500).json({ message: 'Unable to search right now.' });
