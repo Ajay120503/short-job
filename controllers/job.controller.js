@@ -8,6 +8,7 @@ const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upl
 const { getInitialModerationState, applyInitialRuleModeration } = require('../utils/adminSettings');
 const { pickPriorityPage, toId } = require('../utils/contentOrdering');
 const { getProfileCompletionStatus } = require('../utils/profileCompletion');
+const { cleanString, sendValidationError, sendCreateError, parseLocalDate } = require('../utils/createValidation');
 
 const hasActiveBadge = (user, badgeType) =>
   (user.badges || []).some((badge) => badge.type === badgeType && badge.isActive !== false);
@@ -473,38 +474,92 @@ const createJob = async (req, res) => {
   let jobCreated = false;
   try {
     if (!requireAdult(req.user, 'posting a job', res)) return;
-    const {
-      title, description, institutionName, roleType, isPaid,
-      stipend, currency, location, requiredQualifications, skillsRequired,
-      deadline, contactEmail, maxApplicants,
-      workplaceName, workplaceAddress, workplaceCity, workplaceState,
-      workplaceCountry, shortJobType, durationUnit, durationValue, jobDate, startTime, endTime,
-    } = req.body;
+    const title = cleanString(req.body.title);
+    const description = cleanString(req.body.description);
+    const institutionName = cleanString(req.body.institutionName) || cleanString(req.user.institutionName);
+    const roleType = cleanString(req.body.roleType) || 'other';
+    const shortJobType = cleanString(req.body.shortJobType);
+    const durationUnit = cleanString(req.body.durationUnit);
+    const durationValue = req.body.durationValue;
+    const jobDate = cleanString(req.body.jobDate);
+    const startTime = cleanString(req.body.startTime);
+    const endTime = cleanString(req.body.endTime);
+    const deadline = cleanString(req.body.deadline);
+    const contactEmail = cleanString(req.body.contactEmail).toLowerCase();
+    const location = cleanString(req.body.location) || 'onsite';
+    const workplaceName = cleanString(req.body.workplaceName);
+    const workplaceAddress = cleanString(req.body.workplaceAddress);
+    const workplaceCity = cleanString(req.body.workplaceCity);
+    const workplaceState = cleanString(req.body.workplaceState);
+    const workplaceCountry = cleanString(req.body.workplaceCountry);
+    const requiredQualifications = cleanString(req.body.requiredQualifications);
+    const currency = cleanString(req.body.currency) || 'INR';
+    const isPaid = req.body.isPaid === 'true' || req.body.isPaid === true;
+    const stipend = Number(req.body.stipend);
+    const maxApplicants = req.body.maxApplicants === '' || req.body.maxApplicants == null
+      ? 0 : Number(req.body.maxApplicants);
+    const skills = normalizeListInput(req.body.skillsRequired);
+    const errors = {};
 
-    if (!title || !description || !deadline || !jobDate || !contactEmail) {
-      return res.status(400).json({ message: 'Title, description, job date, deadline, and contact email are required.' });
-    }
+    if (title.length < 3) errors.title = 'Job title must contain at least 3 characters.';
+    else if (title.length > 200) errors.title = 'Job title cannot exceed 200 characters.';
+    if (description.length < 30) errors.description = 'Description must contain at least 30 characters.';
+    else if (description.length > 5000) errors.description = 'Description cannot exceed 5000 characters.';
+    if (!institutionName) errors.institutionName = 'Organization name is required.';
+    else if (institutionName.length > 150) errors.institutionName = 'Organization name cannot exceed 150 characters.';
+
+    const roleTypes = ['teacher', 'professor', 'hod', 'principal', 'intern', 'volunteer', 'assistant', 'research', 'other'];
+    const shortJobTypes = ['one_day_gig', 'few_hours', 'weekend_only', 'short_term', 'ongoing_part_time', 'full_time', 'internship', 'volunteer'];
+    if (!roleTypes.includes(roleType)) errors.roleType = 'Choose a valid role type.';
+    if (!shortJobTypes.includes(shortJobType)) errors.shortJobType = 'Choose a valid short job type.';
+
     const duration = req.body.duration && typeof req.body.duration === 'object'
       ? req.body.duration : { unit: durationUnit, value: Number(durationValue) };
-    if (!shortJobType || !['hours', 'days'].includes(duration.unit) || !Number.isFinite(Number(duration.value)) || Number(duration.value) <= 0) {
-      return res.status(400).json({ message: 'Short job type and a positive duration are required.' });
+    const numericDuration = Number(duration.value);
+    if (!['hours', 'days'].includes(duration.unit)) errors.durationUnit = 'Duration unit must be hours or days.';
+    if (!Number.isFinite(numericDuration) || numericDuration < 0.25) errors.durationValue = 'Duration must be at least 0.25.';
+    else if ((duration.unit === 'hours' && numericDuration > 24) || (duration.unit === 'days' && numericDuration > 365)) {
+      errors.durationValue = `Duration cannot exceed ${duration.unit === 'hours' ? '24 hours' : '365 days'}.`;
     }
+
     const validTime = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
-    if (!validTime.test(startTime || '') || !validTime.test(endTime || '') || startTime === endTime) {
-      return res.status(400).json({ message: 'Valid and different start and end times are required.' });
+    if (!validTime.test(startTime)) errors.startTime = 'Choose a valid start time.';
+    if (!validTime.test(endTime)) errors.endTime = 'Choose a valid end time.';
+    else if (startTime === endTime) errors.endTime = 'End time must be different from the start time.';
+
+    const parsedJobDate = parseLocalDate(jobDate);
+    const parsedDeadline = parseLocalDate(deadline);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (!parsedJobDate) errors.jobDate = 'Choose a valid job date.';
+    else if (parsedJobDate < today) errors.jobDate = 'Job date cannot be in the past.';
+    if (!parsedDeadline) errors.deadline = 'Choose a valid application deadline.';
+    else if (parsedDeadline < today) errors.deadline = 'Application deadline cannot be in the past.';
+    else if (!errors.jobDate && parsedDeadline > parsedJobDate) errors.deadline = 'Application deadline cannot be after the job date.';
+
+    if (!/^\S+@\S+\.\S+$/.test(contactEmail) || contactEmail.length > 254) errors.contactEmail = 'Enter a valid contact email address.';
+    if (!['onsite', 'remote', 'hybrid'].includes(location)) errors.location = 'Choose on-site, remote, or hybrid.';
+    if (!['INR', 'USD'].includes(currency)) errors.currency = 'Choose a supported currency.';
+    if (isPaid && (!Number.isFinite(stipend) || stipend <= 0)) errors.stipend = 'Enter a paid amount greater than zero.';
+    if (!Number.isInteger(maxApplicants) || maxApplicants < 0 || maxApplicants > 100000) errors.maxApplicants = 'Applicant limit must be a whole number between 0 and 100,000.';
+
+    const lengthLimits = {
+      workplaceName: [workplaceName, 150], workplaceAddress: [workplaceAddress, 300],
+      workplaceCity: [workplaceCity, 100], workplaceState: [workplaceState, 100],
+      workplaceCountry: [workplaceCountry, 100], requiredQualifications: [requiredQualifications, 2000],
+    };
+    for (const [field, [value, limit]] of Object.entries(lengthLimits)) {
+      if (value.length > limit) errors[field] = `${field.replace(/([A-Z])/g, ' $1')} cannot exceed ${limit} characters.`;
     }
-    const parsedJobDate = new Date(jobDate);
-    const parsedDeadline = new Date(deadline);
-    if (Number.isNaN(parsedJobDate.getTime()) || Number.isNaN(parsedDeadline.getTime())) {
-      return res.status(400).json({ message: 'Please provide a valid job date and application deadline.' });
-    }
-    if (parsedDeadline > parsedJobDate) {
-      return res.status(400).json({ message: 'Application deadline cannot be after the job date.' });
-    }
+    if (location !== 'remote' && !workplaceCity) errors.workplaceCity = 'City is required for on-site and hybrid jobs.';
+    if (skills.length > 20) errors.skillsRequired = 'Add no more than 20 skills.';
+    else if (skills.some((skill) => skill.length > 50)) errors.skillsRequired = 'Each skill must be 50 characters or fewer.';
+
+    if (Object.keys(errors).length) return sendValidationError(res, errors);
 
     let coordinates = getJobCoordinatesFromBody(req.body);
     if (coordinates === null) {
-      return res.status(400).json({ message: 'Please provide valid workplace coordinates.' });
+      return sendValidationError(res, { coordinates: 'Latitude must be -90 to 90 and longitude must be -180 to 180.' });
     }
     if (!coordinates && location !== 'remote') coordinates = await geocodeJobAddress(req.body);
 
@@ -512,30 +567,30 @@ const createJob = async (req, res) => {
 
     const jobData = {
       postedBy: req.user._id,
-      institutionName: institutionName || req.user.institutionName || '',
+      institutionName,
       institutionLogo: req.user.institutionPic || { url: '', publicId: '' },
       title,
       description,
-      roleType: roleType || 'other',
+      roleType,
       shortJobType,
-      duration: { unit: duration.unit, value: Number(duration.value) },
+      duration: { unit: duration.unit, value: numericDuration },
       jobDate: parsedJobDate,
       startTime,
       endTime,
-      isPaid: isPaid === 'true' || isPaid === true,
-      currency: currency || 'INR',
-      stipend: stipend || 0,
-      location: location || 'onsite',
-      workplaceName: workplaceName || '',
-      workplaceAddress: workplaceAddress || '',
-      workplaceCity: workplaceCity || '',
-      workplaceState: workplaceState || '',
-      workplaceCountry: workplaceCountry || '',
-      requiredQualifications: requiredQualifications || '',
-      skillsRequired: normalizeListInput(skillsRequired),
-      deadline: new Date(deadline),
+      isPaid,
+      currency,
+      stipend: isPaid ? stipend : 0,
+      location,
+      workplaceName,
+      workplaceAddress,
+      workplaceCity,
+      workplaceState,
+      workplaceCountry,
+      requiredQualifications,
+      skillsRequired: skills,
+      deadline: parsedDeadline,
       contactEmail,
-      maxApplicants: maxApplicants || 0,
+      maxApplicants,
       ...moderationState,
     };
 
@@ -560,36 +615,42 @@ const createJob = async (req, res) => {
     const job = await JobPost.create(jobData);
     jobCreated = true;
     const populatedJob = await JobPost.findById(job._id)
-      .populate('postedBy', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
+      .populate('postedBy', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant') || job;
 
-    // Create a feed post linked to this job (uses Post.jobPost field)
-    await Post.create({
-      author: req.user._id,
-      type: 'job',
-      text: populatedJob.title,
-      jobPost: populatedJob._id,
-      status: populatedJob.status,
-      moderationMeta: populatedJob.moderationMeta,
-    });
+    // Auxiliary feed/notification failures must not report a successfully saved job as failed.
+    try {
+      await Post.create({
+        author: req.user._id,
+        type: 'job',
+        text: populatedJob.title,
+        jobPost: populatedJob._id,
+        status: populatedJob.status,
+        moderationMeta: populatedJob.moderationMeta,
+      });
+    } catch (feedError) {
+      console.error('Create job feed post error:', feedError);
+    }
 
     // Notify followers about new job post
     const followers = req.user.followers || [];
-    for (const followerId of followers) {
-      await Notification.create({
-        recipient: followerId,
-        sender: req.user._id,
-        type: 'job_applied',
-        message: `${req.user.name} posted a new job: ${title}`,
-        link: `/jobs/${job._id}`,
-      });
-
+    if (followers.length) {
       try {
-        const io = getIO();
-        io.to(followerId.toString()).emit('notification', {
+        await Notification.insertMany(followers.map((followerId) => ({
+          recipient: followerId,
+          sender: req.user._id,
           type: 'job_applied',
           message: `${req.user.name} posted a new job: ${title}`,
           link: `/jobs/${job._id}`,
-        });
+        })));
+      } catch (notificationError) {
+        console.error('Create job notifications error:', notificationError);
+      }
+
+      try {
+        const io = getIO();
+        followers.forEach((followerId) => io.to(followerId.toString()).emit('notification', {
+          type: 'job_applied', message: `${req.user.name} posted a new job: ${title}`, link: `/jobs/${job._id}`,
+        }));
       } catch (socketErr) {}
     }
 
@@ -599,7 +660,7 @@ const createJob = async (req, res) => {
       await deleteFromCloudinary(uploadedJobImagePublicId);
     }
     console.error('Create job error:', error);
-    res.status(500).json({ message: 'Server error.' });
+    return sendCreateError(res, error, 'The job could not be created. Please try again.');
   }
 };
 

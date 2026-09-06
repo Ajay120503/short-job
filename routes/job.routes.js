@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middlewares/auth.middleware');
 const { optionalAuth } = require('../middlewares/auth.middleware');
-const { uploadImage } = require('../middlewares/upload.middleware');
+const { uploadImage, uploadCreationImage } = require('../middlewares/upload.middleware');
 const { cacheResponse } = require('../middlewares/cache.middleware');
 const {
   getJobs,
@@ -48,7 +48,7 @@ router.get('/', optionalAuth, cacheResponse({ ttl: 30, varyByUser: true }), getJ
 router.get('/:id', optionalAuth, cacheResponse({ ttl: 60, varyByUser: true }), getJob);
 
 // Protected routes - any signed-in user can create opportunities; owners can edit/delete.
-router.post('/', authMiddleware, uploadImage.single('image'), createJob);
+router.post('/', authMiddleware, uploadCreationImage.single('image'), createJob);
 router.put('/:id', authMiddleware, uploadImage.single('image'), updateJob);
 router.delete('/:id', authMiddleware, deleteJob);
 

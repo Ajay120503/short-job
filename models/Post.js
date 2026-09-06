@@ -23,7 +23,7 @@ const postSchema = new mongoose.Schema(
         publicId: { type: String, required: true },
       },
     ],
-    tags: [{ type: String, trim: true }],
+    tags: [{ type: String, trim: true, maxlength: [30, 'Each tag must be 30 characters or fewer'] }],
     likes: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -49,15 +49,15 @@ const postSchema = new mongoose.Schema(
     },
     noticeboardExpiresAt: { type: Date },
     pollOptions: [{
-      text: { type: String, trim: true },
+      text: { type: String, trim: true, maxlength: [100, 'Each poll option must be 100 characters or fewer'] },
       votes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     }],
     eventDetails: {
       date: Date,
-      location: { type: String, trim: true },
+      location: { type: String, trim: true, maxlength: [200, 'Event location cannot exceed 200 characters'] },
       rsvps: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     },
-    resourceUrl: { type: String, trim: true },
+    resourceUrl: { type: String, trim: true, maxlength: [1000, 'Resource link cannot exceed 1000 characters'] },
     resourceFileType: { type: String, trim: true },
     status: {
       type: String,

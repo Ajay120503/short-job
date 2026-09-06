@@ -13,7 +13,7 @@ const storySchema = new mongoose.Schema(
     },
     text: {
       type: String,
-      maxlength: 200,
+      maxlength: [200, 'Story caption cannot exceed 200 characters'],
       default: '',
     },
     viewers: [

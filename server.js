@@ -269,7 +269,29 @@ app.use((err, req, res, next) => {
 
   // Multer errors
   if (err.code === 'LIMIT_FILE_SIZE') {
-    return res.status(400).json({ message: 'File too large. Max size is 10MB.' });
+    const isCreationUpload = /^\/api\/(?:posts|jobs|stories)\/?(?:\?|$)/.test(req.originalUrl || '');
+    return res.status(413).json({
+      message: `File too large. Maximum size is ${isCreationUpload ? '5MB' : '10MB'}.`,
+      errors: { [err.field || 'media']: `Choose a file under ${isCreationUpload ? '5MB' : '10MB'}.` },
+    });
+  }
+
+  if (err.code === 'LIMIT_FILE_COUNT') {
+    return res.status(400).json({
+      message: 'You can upload up to 4 images per post.',
+      errors: { images: 'Remove extra images and try again.' },
+    });
+  }
+
+  if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+    return res.status(400).json({
+      message: 'The upload contains an unexpected file or too many files.',
+      errors: { [err.field || 'media']: 'Select the expected file and try again.' },
+    });
+  }
+
+  if (err.code === 'INVALID_IMAGE_TYPE') {
+    return res.status(400).json({ message: err.message, errors: { [err.field || 'image']: err.message } });
   }
 
   if (err.message && err.message.startsWith('Not an image')) {

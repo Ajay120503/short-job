@@ -4,13 +4,22 @@ const streamifier = require('streamifier');
 
 // Use memory storage for multer (buffer in memory)
 const storage = multer.memoryStorage();
+const ALLOWED_IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+]);
 
 // File filter for images
 const imageFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('image')) {
+  if (ALLOWED_IMAGE_TYPES.has(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Not an image! Please upload only images.'), false);
+    const error = new Error('Unsupported image type. Upload a JPG, PNG, GIF, or WebP image.');
+    error.code = 'INVALID_IMAGE_TYPE';
+    error.field = file.fieldname;
+    cb(error, false);
   }
 };
 
@@ -88,7 +97,13 @@ const uploadChatFile = multer({
 const uploadPostImages = multer({
   storage,
   fileFilter: imageFilter,
-  limits: { fileSize: 10 * 1024 * 1024, files: 5 }, // 10MB, max 5 files
+  limits: { fileSize: 5 * 1024 * 1024, files: 4 },
+});
+
+const uploadCreationImage = multer({
+  storage,
+  fileFilter: imageFilter,
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
 });
 
 // Cloudinary upload helper
@@ -153,6 +168,7 @@ module.exports = {
   uploadPDF,
   uploadChatFile,
   uploadPostImages,
+  uploadCreationImage,
   uploadProfile,
   uploadToCloudinary,
   deleteFromCloudinary,

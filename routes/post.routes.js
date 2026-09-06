@@ -27,8 +27,8 @@ router.get('/saved', authMiddleware, getSavedPosts);
 router.get('/:id', optionalAuth, cacheResponse({ ttl: 30, varyByUser: true }), getPost);
 
 // Protected routes
-router.post('/', authMiddleware, uploadPostImages.array('images', 5), createPost);
-router.put('/:id', authMiddleware, uploadPostImages.array('images', 5), updatePost);
+router.post('/', authMiddleware, uploadPostImages.array('images', 4), createPost);
+router.put('/:id', authMiddleware, uploadPostImages.array('images', 4), updatePost);
 router.delete('/:id', authMiddleware, deletePost);
 router.post('/:id/like', authMiddleware, toggleLike);
 router.post('/:id/save', authMiddleware, toggleSave);

@@ -135,6 +135,7 @@ const userSchema = new mongoose.Schema(
     address: {
       type: String,
       trim: true,
+      maxlength: [300, 'Address cannot exceed 300 characters'],
       default: '',
     },
     city: {
