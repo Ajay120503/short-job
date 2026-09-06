@@ -180,15 +180,12 @@ const getConversations = async (req, res) => {
 
     // Add online status info
     const onlineUsers = getOnlineUsers();
-    const seenParticipants = new Set();
-    const conversationsWithStatus = [];
-
-    for (const conv of conversations) {
+    const conversationRows = await Promise.all(conversations.map(async (conv) => {
       const otherParticipant = conv.participants.find(
         (p) => p._id.toString() !== req.user._id.toString()
       );
       const otherId = otherParticipant?._id?.toString();
-      if (!otherId || seenParticipants.has(otherId)) continue;
+      if (!otherId) return null;
 
       const visibleAfter = getConversationVisibleAfter(conv, req.user._id);
       const visibleLastMessage = await Message.findOne(getVisibleMessageFilter(conv, req.user._id))
@@ -198,16 +195,14 @@ const getConversations = async (req, res) => {
         conv.deletedAtBy,
         req.user._id.toString()
       );
-      if (deletedForUser && !visibleLastMessage) continue;
-
-      seenParticipants.add(otherId);
+      if (deletedForUser && !visibleLastMessage) return null;
 
       const unreadCounts = normalizeUnreadCounts(conv);
       if (visibleAfter) {
         unreadCounts[req.user._id.toString()] = 0;
       }
 
-      conversationsWithStatus.push({
+      return {
         ...conv.toObject(),
         lastMessage: visibleLastMessage
           ? visibleLastMessage.content || visibleLastMessage.fileName || 'File'
@@ -220,8 +215,11 @@ const getConversations = async (req, res) => {
           req.user.showOnlineStatus !== false &&
           otherParticipant?.showOnlineStatus !== false &&
           onlineUsers.has(otherParticipant?._id.toString()),
-      });
-    }
+      };
+    }));
+    const conversationsWithStatus = conversationRows
+      .filter(Boolean)
+      .sort((a, b) => new Date(b.lastMessageTime || 0) - new Date(a.lastMessageTime || 0));
 
     res.json({ success: true, conversations: conversationsWithStatus });
   } catch (error) {
