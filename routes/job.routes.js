@@ -7,6 +7,7 @@ const { cacheResponse } = require('../middlewares/cache.middleware');
 const {
   getJobs,
   getNearbyJobCities,
+  getNearbyJobAreas,
   createJob,
   getJob,
   updateJob,
@@ -40,6 +41,7 @@ router.get('/map', cacheResponse({ ttl: 60 }), getJobsMap);
 // Matched jobs (MUST be before /:id)
 router.get('/matched', authMiddleware, getMatchedJobs);
 router.get('/nearby-cities', authMiddleware, cacheResponse({ ttl: 60, varyByUser: true }), getNearbyJobCities);
+router.get('/nearby-areas', authMiddleware, cacheResponse({ ttl: 60, varyByUser: true }), getNearbyJobAreas);
 
 // Public routes
 router.get('/', optionalAuth, cacheResponse({ ttl: 30, varyByUser: true }), getJobs);

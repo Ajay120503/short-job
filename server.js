@@ -31,6 +31,7 @@ const chatRoutes = require('./routes/chat.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const storyRoutes = require('./routes/story.routes');
 const adminRoutes = require('./routes/admin.routes'); // Add admin routes
+const searchRoutes = require('./routes/search.routes');
 
 // Initialize express
 const app = express();
@@ -255,6 +256,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/stories', storyRoutes);
 app.use('/api/admin', adminRoutes); // Add admin routes
+app.use('/api/search', searchRoutes);
 
 // 404 handler
 app.use((req, res) => {
