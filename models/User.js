@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { PERSON_NAME_MAX_LENGTH, isValidPersonName } = require('../utils/createValidation');
 
 const userSchema = new mongoose.Schema(
   {
@@ -8,7 +9,12 @@ const userSchema = new mongoose.Schema(
       required: [true, 'Full name is required'],
       trim: true,
       minlength: [2, 'Name must contain at least 2 characters'],
-      maxlength: [100, 'Name cannot exceed 100 characters'],
+      maxlength: [PERSON_NAME_MAX_LENGTH, `Name cannot exceed ${PERSON_NAME_MAX_LENGTH} characters`],
+      match: [/^[\p{L}\p{M} .'-]+$/u, 'Name can contain only letters, spaces, apostrophes, periods, and hyphens'],
+      validate: {
+        validator: isValidPersonName,
+        message: 'Name must contain at least 2 letters',
+      },
     },
     email: {
       type: String,

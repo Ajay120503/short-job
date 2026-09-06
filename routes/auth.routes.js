@@ -18,6 +18,7 @@ const {
 } = require('../controllers/auth.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
 const { uploadImage } = require('../middlewares/upload.middleware');
+const { PERSON_NAME_MAX_LENGTH, PERSON_NAME_PATTERN, isValidPersonName } = require('../utils/createValidation');
 
 // Validation rules
 const registerValidation = [
@@ -25,7 +26,9 @@ const registerValidation = [
     .trim()
     .notEmpty().withMessage('Name is required')
     .isLength({ min: 2 }).withMessage('Name must contain at least 2 characters')
-    .isLength({ max: 100 }).withMessage('Name cannot exceed 100 characters'),
+    .isLength({ max: PERSON_NAME_MAX_LENGTH }).withMessage(`Name cannot exceed ${PERSON_NAME_MAX_LENGTH} characters`)
+    .matches(PERSON_NAME_PATTERN).withMessage('Name can contain only letters, spaces, apostrophes, periods, and hyphens')
+    .custom(isValidPersonName).withMessage('Name must contain at least 2 letters'),
   body('email').isEmail().withMessage('Please enter a valid email').isLength({ max: 254 }).withMessage('Email cannot exceed 254 characters'),
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters').isLength({ max: 128 }).withMessage('Password cannot exceed 128 characters'),
 ];

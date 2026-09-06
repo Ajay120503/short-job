@@ -5,7 +5,7 @@ const Notification = require('../models/Notification');
 const LoginRecord = require('../models/LoginRecord');
 const { getIO, getOnlineUsers } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
-const { cleanString, sendValidationError } = require('../utils/createValidation');
+const { PERSON_NAME_MAX_LENGTH, cleanString, isValidPersonName, sendValidationError } = require('../utils/createValidation');
 
 const SELF_BADGES = [
   'student', 'teacher', 'professor', 'principal', 'hod',
@@ -327,6 +327,15 @@ const updateProfile = async (req, res) => {
     }
 
     const profileErrors = {};
+    if (updates.name !== undefined) {
+      if (!updates.name) profileErrors.name = 'Full name is required.';
+      else if (!isValidPersonName(updates.name)) {
+        profileErrors.name = `Use 2 to ${PERSON_NAME_MAX_LENGTH} characters: letters, spaces, apostrophes, periods, or hyphens only.`;
+      }
+    }
+    if (updates.bio !== undefined && updates.bio.length > 200) {
+      profileErrors.bio = 'Bio cannot exceed 200 characters.';
+    }
     const arrayRules = {
       skills: [20, 50, 'skill'],
       qualifications: [20, 100, 'qualification'],
