@@ -2,6 +2,7 @@ const Comment = require('../models/Comment');
 const Post = require('../models/Post');
 const Notification = require('../models/Notification');
 const { getIO } = require('../config/socket');
+const { cleanString, sendValidationError, sendCreateError } = require('../utils/createValidation');
 
 const canViewPost = (post, user) => {
   if (!post.status || post.status === 'approved') return true;
@@ -61,11 +62,10 @@ const getComments = async (req, res) => {
 const addComment = async (req, res) => {
   try {
     const { postId } = req.params;
-    const { text } = req.body;
+    const text = cleanString(req.body.text);
 
-    if (!text || !text.trim()) {
-      return res.status(400).json({ message: 'Comment text is required.' });
-    }
+    if (!text) return sendValidationError(res, { text: 'Comment text is required.' });
+    if (text.length > 500) return sendValidationError(res, { text: 'Comment cannot exceed 500 characters.' });
 
     const post = await Post.findById(postId);
     if (!post) {
@@ -79,7 +79,7 @@ const addComment = async (req, res) => {
     const comment = await Comment.create({
       post: postId,
       author: req.user._id,
-      text: text.trim(),
+      text,
     });
 
     // Add comment reference to post
@@ -91,13 +91,14 @@ const addComment = async (req, res) => {
 
     // Notify post author (if not self)
     if (post.author.toString() !== req.user._id.toString()) {
-      await Notification.create({
-        recipient: post.author,
-        sender: req.user._id,
-        type: 'post_comment',
-        message: `${req.user.name} commented on your post.`,
-        link: `/post/${postId}`,
-      });
+      try {
+        await Notification.create({
+          recipient: post.author, sender: req.user._id, type: 'post_comment',
+          message: `${req.user.name} commented on your post.`, link: `/post/${postId}`,
+        });
+      } catch (notificationError) {
+        console.error('Comment notification error:', notificationError);
+      }
 
       try {
         const io = getIO();
@@ -118,7 +119,7 @@ const addComment = async (req, res) => {
     res.status(201).json({ success: true, comment: populatedComment });
   } catch (error) {
     console.error('Add comment error:', error);
-    res.status(500).json({ message: 'Server error.' });
+    return sendCreateError(res, error, 'The comment could not be posted. Please try again.');
   }
 };
 
@@ -127,11 +128,10 @@ const addComment = async (req, res) => {
 const replyToComment = async (req, res) => {
   try {
     const { commentId } = req.params;
-    const { text } = req.body;
+    const text = cleanString(req.body.text);
 
-    if (!text || !text.trim()) {
-      return res.status(400).json({ message: 'Reply text is required.' });
-    }
+    if (!text) return sendValidationError(res, { text: 'Reply text is required.' });
+    if (text.length > 500) return sendValidationError(res, { text: 'Reply cannot exceed 500 characters.' });
 
     const parentComment = await Comment.findById(commentId);
     if (!parentComment) {
@@ -141,7 +141,7 @@ const replyToComment = async (req, res) => {
     const reply = await Comment.create({
       post: parentComment.post,
       author: req.user._id,
-      text: text.trim(),
+      text,
       parentComment: commentId,
     });
 
@@ -154,13 +154,14 @@ const replyToComment = async (req, res) => {
 
     // Notify parent comment author
     if (parentComment.author.toString() !== req.user._id.toString()) {
-      await Notification.create({
-        recipient: parentComment.author,
-        sender: req.user._id,
-        type: 'comment_reply',
-        message: `${req.user.name} replied to your comment.`,
-        link: `/post/${parentComment.post}`,
-      });
+      try {
+        await Notification.create({
+          recipient: parentComment.author, sender: req.user._id, type: 'comment_reply',
+          message: `${req.user.name} replied to your comment.`, link: `/post/${parentComment.post}`,
+        });
+      } catch (notificationError) {
+        console.error('Reply notification error:', notificationError);
+      }
 
       try {
         const io = getIO();
@@ -175,7 +176,7 @@ const replyToComment = async (req, res) => {
     res.status(201).json({ success: true, comment: populatedReply });
   } catch (error) {
     console.error('Reply to comment error:', error);
-    res.status(500).json({ message: 'Server error.' });
+    return sendCreateError(res, error, 'The reply could not be posted. Please try again.');
   }
 };
 

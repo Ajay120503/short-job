@@ -151,10 +151,10 @@ const jobPostSchema = new mongoose.Schema(
       coordinates: { type: [Number], default: undefined },
     },
     qna: [{
-      question: { type: String, required: true },
+      question: { type: String, required: true, trim: true, maxlength: [500, 'Question cannot exceed 500 characters'] },
       askedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       isAnonymous: { type: Boolean, default: false },
-      answer: { type: String, default: '' },
+      answer: { type: String, trim: true, maxlength: [2000, 'Answer cannot exceed 2000 characters'], default: '' },
       answeredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       answeredAt: { type: Date },
       createdAt: { type: Date, default: Date.now },

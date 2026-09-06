@@ -5,6 +5,7 @@ const Notification = require('../models/Notification');
 const LoginRecord = require('../models/LoginRecord');
 const { getIO, getOnlineUsers } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
+const { cleanString, sendValidationError } = require('../utils/createValidation');
 
 const SELF_BADGES = [
   'student', 'teacher', 'professor', 'principal', 'hod',
@@ -260,6 +261,15 @@ const updateProfile = async (req, res) => {
       return res.status(403).json({ message: 'You can only update your own profile.' });
     }
 
+    const oversizedProfileImage = ['profilePic', 'institutionPic'].find(
+      (field) => req.files?.[field]?.[0]?.size > 5 * 1024 * 1024
+    );
+    if (oversizedProfileImage) {
+      return sendValidationError(res, {
+        [oversizedProfileImage]: 'Profile and organization images must be under 5MB.',
+      });
+    }
+
     const allowedFields = [
       'name', 'bio', 'age', 'dateOfBirth', 'educationLevel',
       'institutionName', 'institutionType', 'subject', 'experience',
@@ -271,6 +281,11 @@ const updateProfile = async (req, res) => {
 
     const arrayFields = ['skills', 'qualifications', 'interests'];
 
+    const stringFields = new Set([
+      'name', 'bio', 'educationLevel', 'institutionName', 'institutionType',
+      'subject', 'address', 'city', 'state', 'linkedinUrl', 'profession',
+      'currentPosition', 'currentCompany', 'previousWork', 'profileThemeVariant',
+    ]);
     const updates = {};
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
@@ -295,7 +310,7 @@ const updateProfile = async (req, res) => {
           field === 'locationAccessEnabled' ||
           field === 'loginAuditEnabled'
             ? req.body[field] === true || req.body[field] === 'true'
-            : req.body[field];
+            : stringFields.has(field) ? cleanString(req.body[field]) : req.body[field];
       }
     }
 
@@ -304,12 +319,34 @@ const updateProfile = async (req, res) => {
       if (req.body[field] !== undefined) {
         const value = req.body[field];
         if (typeof value === 'string') {
-          updates[field] = value.split(',').map(s => s.trim()).filter(Boolean);
+          updates[field] = [...new Set(value.split(',').map(s => s.trim()).filter(Boolean))];
         } else if (Array.isArray(value)) {
-          updates[field] = value;
+          updates[field] = [...new Set(value.map((item) => cleanString(item)).filter(Boolean))];
         }
       }
     }
+
+    const profileErrors = {};
+    const arrayRules = {
+      skills: [20, 50, 'skill'],
+      qualifications: [20, 100, 'qualification'],
+      interests: [20, 50, 'interest'],
+    };
+    for (const [field, [maxItems, maxLength, label]] of Object.entries(arrayRules)) {
+      const values = updates[field];
+      if (!values) continue;
+      if (values.length > maxItems) profileErrors[field] = `Add no more than ${maxItems} ${label}s.`;
+      else if (values.some((value) => value.length > maxLength)) profileErrors[field] = `Each ${label} must be ${maxLength} characters or fewer.`;
+    }
+    if (updates.experience !== undefined && updates.experience !== '') {
+      const experience = Number(updates.experience);
+      if (!Number.isFinite(experience) || experience < 0 || experience > 80) {
+        profileErrors.experience = 'Experience must be between 0 and 80 years.';
+      } else {
+        updates.experience = experience;
+      }
+    }
+    if (Object.keys(profileErrors).length) return sendValidationError(res, profileErrors);
 
     if (updates.dateOfBirth === '') {
       updates.dateOfBirth = undefined;
@@ -605,7 +642,7 @@ const getUserJobs = async (req, res) => {
 const getFollowers = async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
-      .populate('followers', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
+      .populate('followers', 'name profilePic role category institutionName openToOpportunities badges verifiedStatus isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
 
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
@@ -623,7 +660,7 @@ const getFollowers = async (req, res) => {
 const getFollowing = async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
-      .populate('following', 'name profilePic role category institutionName openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
+      .populate('following', 'name profilePic role category institutionName openToOpportunities badges verifiedStatus isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
 
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
@@ -784,7 +821,23 @@ const updateTimeline = async (req, res) => {
       return res.status(400).json({ message: 'Timeline must be an array.' });
     }
     if (timeline.length > 20) {
-      return res.status(400).json({ message: 'A timeline can contain up to 20 milestones.' });
+      return sendValidationError(res, { timeline: 'A timeline can contain up to 20 milestones.' });
+    }
+
+    const oversizedEntry = timeline.find((entry = {}) =>
+      String(entry.title || '').trim().length > 150 ||
+      String(entry.institution || '').trim().length > 150 ||
+      String(entry.description || '').trim().length > 500 ||
+      String(entry.location || '').trim().length > 120 ||
+      String(entry.link || '').trim().length > 500 ||
+      (Array.isArray(entry.skills) ? entry.skills : String(entry.skills || '').split(',')).length > 12 ||
+      (Array.isArray(entry.skills) ? entry.skills : String(entry.skills || '').split(','))
+        .some((skill) => String(skill).trim().length > 50)
+    );
+    if (oversizedEntry) {
+      return sendValidationError(res, {
+        timeline: 'Check milestone text limits: title and organization 150, description 500, location 120, link 500, and up to 12 skills of 50 characters.',
+      });
     }
 
     const allowedTypes = new Set(['school', 'college', 'course', 'certification', 'internship', 'work', 'promotion', 'project', 'volunteer', 'award', 'achievement']);
@@ -812,7 +865,7 @@ const updateTimeline = async (req, res) => {
         (entry.link && !/^https?:\/\//i.test(entry.link));
     });
     if (invalidEntry) {
-      return res.status(400).json({ message: 'Check milestone titles, years, and links before saving.' });
+      return sendValidationError(res, { timeline: 'Check milestone titles, years, and links before saving.' });
     }
 
     const user = await User.findByIdAndUpdate(

@@ -14,6 +14,7 @@ const messageSchema = new mongoose.Schema(
     },
     content: {
       type: String,
+      maxlength: [4000, 'Message cannot exceed 4000 characters'],
       default: '',
     },
     type: {
@@ -31,6 +32,7 @@ const messageSchema = new mongoose.Schema(
     },
     fileName: {
       type: String,
+      maxlength: [255, 'File name cannot exceed 255 characters'],
       default: '',
     },
     fileMimeType: { type: String, default: '' },
@@ -50,7 +52,7 @@ const messageSchema = new mongoose.Schema(
       },
     ],
     reactions: [{
-      emoji: { type: String },
+      emoji: { type: String, maxlength: [16, 'Invalid reaction'] },
       reactedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     }],
     editedAt: { type: Date },

@@ -2,6 +2,8 @@ const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
 const { getIO, getOnlineUsers } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
+const mongoose = require('mongoose');
+const { cleanString, sendValidationError, sendCreateError } = require('../utils/createValidation');
 
 const conversationLocks = new Map();
 
@@ -370,16 +372,24 @@ const createConversation = async (req, res) => {
 // @desc    Send a message
 // @route   POST /api/messages
 const sendMessage = async (req, res) => {
+  let uploadedFilePublicId = '';
+  let messageCreated = false;
   try {
-    const { conversationId, content, type, replyTo } = req.body;
+    const conversationId = cleanString(req.body.conversationId);
+    const content = cleanString(req.body.content);
+    const type = cleanString(req.body.type) || 'text';
+    const replyTo = cleanString(req.body.replyTo);
 
-    if (!conversationId) {
-      return res.status(400).json({ message: 'Conversation ID is required.' });
-    }
-
-    if (!content && (!req.file)) {
-      return res.status(400).json({ message: 'Message content is required.' });
-    }
+    const errors = {};
+    if (!mongoose.isObjectIdOrHexString(conversationId)) errors.conversationId = 'Choose a valid conversation.';
+    if (!content && !req.file) errors.content = 'Type a message or attach a file.';
+    if (content.length > 4000) errors.content = 'Message cannot exceed 4000 characters.';
+    if (!req.file && !['text', 'sticker'].includes(type)) errors.type = 'Invalid message type.';
+    if (type === 'sticker' && content.length > 32) errors.content = 'Invalid sticker.';
+    if (replyTo && !mongoose.isObjectIdOrHexString(replyTo)) errors.replyTo = 'The replied message is invalid.';
+    if (req.file?.originalname?.length > 255) errors.file = 'File name cannot exceed 255 characters.';
+    if (req.file && req.file.size === 0) errors.file = 'The selected file is empty.';
+    if (Object.keys(errors).length) return sendValidationError(res, errors);
 
     const conversation = await Conversation.findById(conversationId);
     if (!conversation) {
@@ -400,8 +410,8 @@ const sendMessage = async (req, res) => {
     const messageData = {
       conversation: conversationId,
       sender: req.user._id,
-      content: content || '',
-      type: type || 'text',
+      content,
+      type,
       readBy: [req.user._id],
       deliveredTo: [req.user._id],
       replyTo: replyTo || null,
@@ -414,14 +424,16 @@ const sendMessage = async (req, res) => {
         : 'ShortJob/chat-files';
 
       const result = await uploadToCloudinary(req.file, folder);
+      uploadedFilePublicId = result.public_id;
       messageData.fileUrl = result.secure_url;
       messageData.filePublicId = result.public_id;
-      messageData.fileName = req.file.originalname;
+      messageData.fileName = req.file.originalname.replace(/[\r\n]/g, '').slice(0, 255);
       messageData.fileMimeType = req.file.mimetype;
       messageData.type = req.file.mimetype.startsWith('image') ? 'image' : 'file';
     }
 
     const message = await Message.create(messageData);
+    messageCreated = true;
 
     // Update conversation's last message
     conversation.lastMessage = message.content || (message.fileName || 'File');
@@ -437,14 +449,22 @@ const sendMessage = async (req, res) => {
       }
     }
 
-    await conversation.save();
+    try {
+      await conversation.save();
+    } catch (conversationError) {
+      console.error('Update conversation preview after message error:', conversationError);
+    }
 
     const recipientId = conversation.participants.find(
       (participant) => participant.toString() !== req.user._id.toString()
     );
     if (recipientId && getOnlineUsers().has(recipientId.toString())) {
       message.deliveredTo.addToSet(recipientId);
-      await message.save();
+      try {
+        await message.save();
+      } catch (deliveryError) {
+        console.error('Update message delivery state error:', deliveryError);
+      }
     }
 
     const populatedMessage = await Message.findById(message._id)
@@ -472,8 +492,9 @@ const sendMessage = async (req, res) => {
 
     res.status(201).json({ success: true, message: populatedMessage });
   } catch (error) {
+    if (!messageCreated && uploadedFilePublicId) await deleteFromCloudinary(uploadedFilePublicId);
     console.error('Send message error:', error);
-    res.status(500).json({ message: 'Server error.' });
+    return sendCreateError(res, error, 'The message could not be sent. Please try again.');
   }
 };
 
@@ -661,10 +682,9 @@ const reactToMessage = async (req, res) => {
 // @route   PUT /api/messages/:id
 const updateMessage = async (req, res) => {
   try {
-    const { content } = req.body;
-    if (!content || !content.trim()) {
-      return res.status(400).json({ message: 'Message content is required.' });
-    }
+    const content = cleanString(req.body.content);
+    if (!content) return sendValidationError(res, { content: 'Message content is required.' });
+    if (content.length > 4000) return sendValidationError(res, { content: 'Message cannot exceed 4000 characters.' });
 
     const message = await Message.findById(req.params.id);
     if (!message) {
@@ -681,7 +701,7 @@ const updateMessage = async (req, res) => {
       return res.status(400).json({ message: 'Only text messages can be edited.' });
     }
 
-    message.content = content.trim();
+    message.content = content;
     message.editedAt = new Date();
     await message.save();
 
@@ -697,7 +717,7 @@ const updateMessage = async (req, res) => {
     res.json({ success: true, message: populatedMessage });
   } catch (error) {
     console.error('Update message error:', error);
-    res.status(500).json({ message: 'Server error.' });
+    return sendCreateError(res, error, 'The message could not be updated. Please try again.');
   }
 };
 

@@ -270,9 +270,10 @@ app.use((err, req, res, next) => {
   // Multer errors
   if (err.code === 'LIMIT_FILE_SIZE') {
     const isCreationUpload = /^\/api\/(?:posts|jobs|stories)\/?(?:\?|$)/.test(req.originalUrl || '');
+    const maxSize = req.originalUrl?.startsWith('/api/chat/') ? '20MB' : isCreationUpload ? '5MB' : '10MB';
     return res.status(413).json({
-      message: `File too large. Maximum size is ${isCreationUpload ? '5MB' : '10MB'}.`,
-      errors: { [err.field || 'media']: `Choose a file under ${isCreationUpload ? '5MB' : '10MB'}.` },
+      message: `File too large. Maximum size is ${maxSize}.`,
+      errors: { [err.field || 'media']: `Choose a file under ${maxSize}.` },
     });
   }
 
@@ -290,8 +291,23 @@ app.use((err, req, res, next) => {
     });
   }
 
+  if (['LIMIT_FIELD_KEY', 'LIMIT_FIELD_VALUE', 'LIMIT_FIELD_COUNT', 'LIMIT_PART_COUNT'].includes(err.code)) {
+    return res.status(400).json({
+      message: 'The submitted form contains too much data. Shorten the fields and try again.',
+      errors: { form: 'One or more form fields exceed the allowed size.' },
+    });
+  }
+
   if (err.code === 'INVALID_IMAGE_TYPE') {
     return res.status(400).json({ message: err.message, errors: { [err.field || 'image']: err.message } });
+  }
+
+  if (err.code === 'INVALID_PROFILE_FILE_TYPE') {
+    return res.status(400).json({ message: err.message, errors: { [err.field || 'file']: err.message } });
+  }
+
+  if (err.code === 'INVALID_CHAT_FILE_TYPE') {
+    return res.status(400).json({ message: err.message, errors: { file: err.message } });
   }
 
   if (err.message && err.message.startsWith('Not an image')) {

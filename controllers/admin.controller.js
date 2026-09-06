@@ -285,10 +285,17 @@ const unblockUser = async (req, res) => {
 // @route   PUT /api/admin/users/:id/notes
 const updateUserNotes = async (req, res) => {
   try {
+    const notes = String(req.body?.notes || '').trim();
+    if (notes.length > 2000) {
+      return res.status(400).json({
+        message: 'Admin notes cannot exceed 2000 characters.',
+        errors: { notes: 'Admin notes cannot exceed 2000 characters.' },
+      });
+    }
     const user = await User.findByIdAndUpdate(
       req.params.id,
-      { adminNotes: req.body?.notes || '' },
-      { returnDocument: 'after' }
+      { adminNotes: notes },
+      { returnDocument: 'after', runValidators: true }
     ).select('-password -verificationToken -resetPasswordToken -otp');
 
     if (!user) {

@@ -1316,10 +1316,10 @@ const quickApply = async (req, res) => {
 // @route   POST /api/jobs/:id/qna
 const addQnAQuestion = async (req, res) => {
   try {
-    const { question, isAnonymous } = req.body;
-    if (!question) {
-      return res.status(400).json({ message: 'Question is required.' });
-    }
+    const question = cleanString(req.body.question);
+    const { isAnonymous } = req.body;
+    if (!question) return sendValidationError(res, { question: 'Question is required.' });
+    if (question.length > 500) return sendValidationError(res, { question: 'Question cannot exceed 500 characters.' });
 
     const job = await JobPost.findById(req.params.id);
     if (!job) {
@@ -1339,13 +1339,14 @@ const addQnAQuestion = async (req, res) => {
     await job.save();
 
     // Notify job poster
-    await Notification.create({
-      recipient: job.postedBy,
-      sender: req.user._id,
-      type: 'job_qna',
-      message: `A new question was asked on your job: ${job.title}`,
-      link: `/jobs/${job._id}`,
-    });
+    try {
+      await Notification.create({
+        recipient: job.postedBy, sender: req.user._id, type: 'job_qna',
+        message: `A new question was asked on your job: ${job.title}`, link: `/jobs/${job._id}`,
+      });
+    } catch (notificationError) {
+      console.error('QnA notification error:', notificationError);
+    }
 
     const populated = await JobPost.findById(job._id)
       .populate('qna.askedBy', 'name profilePic openToOpportunities');
@@ -1353,7 +1354,7 @@ const addQnAQuestion = async (req, res) => {
     res.status(201).json({ success: true, qna: populated.qna });
   } catch (error) {
     console.error('Add QnA question error:', error);
-    res.status(500).json({ message: 'Server error.' });
+    return sendCreateError(res, error, 'The question could not be posted. Please try again.');
   }
 };
 
@@ -1361,10 +1362,9 @@ const addQnAQuestion = async (req, res) => {
 // @route   POST /api/jobs/:id/qna/:qnaId/answer
 const answerQnA = async (req, res) => {
   try {
-    const { answer } = req.body;
-    if (!answer) {
-      return res.status(400).json({ message: 'Answer is required.' });
-    }
+    const answer = cleanString(req.body.answer);
+    if (!answer) return sendValidationError(res, { answer: 'Answer is required.' });
+    if (answer.length > 2000) return sendValidationError(res, { answer: 'Answer cannot exceed 2000 characters.' });
 
     const job = await JobPost.findById(req.params.id);
     if (!job) {
@@ -1387,13 +1387,14 @@ const answerQnA = async (req, res) => {
 
     // Notify question asker
     if (qnaItem.askedBy && qnaItem.askedBy.toString() !== req.user._id.toString()) {
-      await Notification.create({
-        recipient: qnaItem.askedBy,
-        sender: req.user._id,
-        type: 'job_qna',
-        message: `Your question on "${job.title}" was answered.`,
-        link: `/jobs/${job._id}`,
-      });
+      try {
+        await Notification.create({
+          recipient: qnaItem.askedBy, sender: req.user._id, type: 'job_qna',
+          message: `Your question on "${job.title}" was answered.`, link: `/jobs/${job._id}`,
+        });
+      } catch (notificationError) {
+        console.error('QnA answer notification error:', notificationError);
+      }
     }
 
     const populated = await JobPost.findById(job._id)
@@ -1402,7 +1403,7 @@ const answerQnA = async (req, res) => {
     res.json({ success: true, qna: populated.qna });
   } catch (error) {
     console.error('Answer QnA error:', error);
-    res.status(500).json({ message: 'Server error.' });
+    return sendCreateError(res, error, 'The answer could not be posted. Please try again.');
   }
 };
 

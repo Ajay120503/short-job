@@ -22,23 +22,23 @@ const { uploadImage } = require('../middlewares/upload.middleware');
 // Validation rules
 const registerValidation = [
   body('name').trim().notEmpty().withMessage('Name is required').isLength({ max: 100 }),
-  body('email').isEmail().withMessage('Please enter a valid email'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('email').isEmail().withMessage('Please enter a valid email').isLength({ max: 254 }).withMessage('Email cannot exceed 254 characters'),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters').isLength({ max: 128 }).withMessage('Password cannot exceed 128 characters'),
 ];
 
 const loginValidation = [
-  body('email').isEmail().withMessage('Please enter a valid email'),
-  body('password').notEmpty().withMessage('Password is required'),
+  body('email').isEmail().withMessage('Please enter a valid email').isLength({ max: 254 }).withMessage('Email cannot exceed 254 characters'),
+  body('password').notEmpty().withMessage('Password is required').isLength({ max: 128 }).withMessage('Password cannot exceed 128 characters'),
 ];
 
 const forgotPasswordValidation = [
-  body('email').isEmail().withMessage('Please enter a valid email'),
+  body('email').isEmail().withMessage('Please enter a valid email').isLength({ max: 254 }).withMessage('Email cannot exceed 254 characters'),
 ];
 
 const resetPasswordValidation = [
   body('email').isEmail().withMessage('Valid email is required'),
   body('otp').notEmpty().withMessage('OTP is required'),
-  body('newPassword').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('newPassword').isLength({ min: 6 }).withMessage('Password must be at least 6 characters').isLength({ max: 128 }).withMessage('Password cannot exceed 128 characters'),
 ];
 
 // Public routes
