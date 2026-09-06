@@ -5,7 +5,16 @@ const Notification = require('../models/Notification');
 const LoginRecord = require('../models/LoginRecord');
 const { getIO, getOnlineUsers } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
-const { PERSON_NAME_MAX_LENGTH, cleanString, isValidPersonName, sendValidationError } = require('../utils/createValidation');
+const {
+  PERSON_NAME_MIN_LENGTH,
+  PERSON_NAME_MAX_LENGTH,
+  cleanString,
+  isValidPersonName,
+  sendValidationError,
+} = require('../utils/createValidation');
+
+const PROFILE_TEXT_MIN_LENGTH = 5;
+const PROFILE_TEXT_MAX_LENGTH = 20;
 
 const SELF_BADGES = [
   'student', 'teacher', 'professor', 'principal', 'hod',
@@ -330,22 +339,46 @@ const updateProfile = async (req, res) => {
     if (updates.name !== undefined) {
       if (!updates.name) profileErrors.name = 'Full name is required.';
       else if (!isValidPersonName(updates.name)) {
-        profileErrors.name = `Use 2 to ${PERSON_NAME_MAX_LENGTH} characters: letters, spaces, apostrophes, periods, or hyphens only.`;
+        profileErrors.name = `Use ${PERSON_NAME_MIN_LENGTH} to ${PERSON_NAME_MAX_LENGTH} characters: letters, spaces, apostrophes, periods, or hyphens only.`;
       }
     }
-    if (updates.bio !== undefined && updates.bio.length > 200) {
-      profileErrors.bio = 'Bio cannot exceed 200 characters.';
+    const profileTextLabels = {
+      bio: 'Bio',
+      institutionName: 'Organization name',
+      subject: 'Subject',
+      address: 'Address',
+      city: 'City',
+      state: 'State',
+      profession: 'Profession',
+      currentPosition: 'Current position',
+      currentCompany: 'Current workplace',
+      previousWork: 'Previous work',
+    };
+    for (const [field, label] of Object.entries(profileTextLabels)) {
+      if (updates[field] === undefined || updates[field] === '') continue;
+      if (updates[field].length < PROFILE_TEXT_MIN_LENGTH) {
+        profileErrors[field] = `${label} must contain at least ${PROFILE_TEXT_MIN_LENGTH} characters.`;
+      } else if (updates[field].length > PROFILE_TEXT_MAX_LENGTH) {
+        profileErrors[field] = `${label} cannot exceed ${PROFILE_TEXT_MAX_LENGTH} characters.`;
+      }
     }
     const arrayRules = {
-      skills: [20, 50, 'skill'],
-      qualifications: [20, 100, 'qualification'],
-      interests: [20, 50, 'interest'],
+      skills: [20, PROFILE_TEXT_MIN_LENGTH, PROFILE_TEXT_MAX_LENGTH, 'skill'],
+      qualifications: [20, PROFILE_TEXT_MIN_LENGTH, PROFILE_TEXT_MAX_LENGTH, 'qualification'],
+      interests: [20, PROFILE_TEXT_MIN_LENGTH, PROFILE_TEXT_MAX_LENGTH, 'interest'],
     };
-    for (const [field, [maxItems, maxLength, label]] of Object.entries(arrayRules)) {
+    for (const [field, [maxItems, minLength, maxLength, label]] of Object.entries(arrayRules)) {
       const values = updates[field];
       if (!values) continue;
       if (values.length > maxItems) profileErrors[field] = `Add no more than ${maxItems} ${label}s.`;
+      else if (values.some((value) => value.length < minLength)) profileErrors[field] = `Each ${label} must contain at least ${minLength} characters.`;
       else if (values.some((value) => value.length > maxLength)) profileErrors[field] = `Each ${label} must be ${maxLength} characters or fewer.`;
+    }
+    if (updates.isCurrentlyWorking === true && !updates.currentPosition) {
+      profileErrors.currentPosition = 'Current position is required when currently working.';
+    }
+    if (updates.isCurrentlyWorking === true && !updates.currentCompany) {
+      profileErrors.currentCompany = 'Current workplace is required when currently working.';
     }
     if (updates.experience !== undefined && updates.experience !== '') {
       const experience = Number(updates.experience);

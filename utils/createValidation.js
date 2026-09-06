@@ -1,13 +1,14 @@
 const cleanString = (value) => (typeof value === 'string' ? value.trim() : '');
 const MIN_STANDALONE_CONTENT_LENGTH = 5;
 const MAX_SHORT_CREATION_TEXT_LENGTH = 20;
+const PERSON_NAME_MIN_LENGTH = 5;
 const PERSON_NAME_MAX_LENGTH = 20;
 const PERSON_NAME_PATTERN = /^[\p{L}\p{M} .'-]+$/u;
 
 const isValidPersonName = (value) => {
   const name = cleanString(value);
   const letterCount = (name.match(/\p{L}/gu) || []).length;
-  return letterCount >= 2 && name.length <= PERSON_NAME_MAX_LENGTH && PERSON_NAME_PATTERN.test(name);
+  return letterCount >= PERSON_NAME_MIN_LENGTH && name.length <= PERSON_NAME_MAX_LENGTH && PERSON_NAME_PATTERN.test(name);
 };
 
 const sendValidationError = (res, errors) => res.status(400).json({
@@ -56,6 +57,7 @@ const parseLocalDate = (value) => {
 module.exports = {
   MIN_STANDALONE_CONTENT_LENGTH,
   MAX_SHORT_CREATION_TEXT_LENGTH,
+  PERSON_NAME_MIN_LENGTH,
   PERSON_NAME_MAX_LENGTH,
   PERSON_NAME_PATTERN,
   cleanString,
