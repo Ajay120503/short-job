@@ -1,5 +1,27 @@
 const mongoose = require('mongoose');
 
+const locationPointSchema = new mongoose.Schema(
+  {
+    type: {
+      type: String,
+      enum: ['Point'],
+      required: true,
+    },
+    coordinates: {
+      type: [Number],
+      required: true,
+      validate: {
+        validator: (coordinates) =>
+          Array.isArray(coordinates) &&
+          coordinates.length === 2 &&
+          coordinates.every(Number.isFinite),
+        message: 'Location point must contain valid longitude and latitude coordinates',
+      },
+    },
+  },
+  { _id: false },
+);
+
 const jobPostSchema = new mongoose.Schema(
   {
     postedBy: {
@@ -174,9 +196,11 @@ const jobPostSchema = new mongoose.Schema(
       lat: { type: Number },
       lng: { type: Number },
     },
+    // Keep this field absent when geocoding is unavailable. A partial GeoJSON
+    // point (for example, `{ type: 'Point' }`) is rejected by the 2dsphere index.
     location_point: {
-      type: { type: String, enum: ['Point'], default: 'Point' },
-      coordinates: { type: [Number], default: undefined },
+      type: locationPointSchema,
+      default: undefined,
     },
     qna: [{
       question: { type: String, required: true, trim: true, maxlength: [500, 'Question cannot exceed 500 characters'] },
