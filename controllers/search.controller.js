@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const JobPost = require('../models/JobPost');
 const Post = require('../models/Post');
+const Comment = require('../models/Comment');
 const Conversation = require('../models/Conversation');
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -17,13 +18,13 @@ const globalSearch = async (req, res) => {
   try {
     const query = String(req.query.q || '').trim();
     if (query.length < 2) {
-      return res.json({ success: true, query, results: { users: [], jobs: [], posts: [], chats: [] } });
+      return res.json({ success: true, query, results: { users: [], jobs: [], posts: [], comments: [], chats: [] } });
     }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const [users, jobs, posts, conversations] = await Promise.all([
+    const [users, jobs, posts, authoredComments, conversations] = await Promise.all([
       User.find({
         isActive: { $ne: false },
         isBlocked: { $ne: true },
@@ -35,6 +36,7 @@ const globalSearch = async (req, res) => {
         .lean(),
       JobPost.find({
         isActive: true,
+        isPaid: true,
         deadline: { $gte: today },
         $and: [
           { $or: [{ status: 'approved' }, { postedBy: req.user._id }] },
@@ -58,6 +60,15 @@ const globalSearch = async (req, res) => {
         .populate('author', 'name profilePic')
         .sort({ createdAt: -1 })
         .limit(8)
+        .lean(),
+      Comment.find({
+        author: req.user._id,
+        $and: buildTokenSearch(query, ['text']),
+      })
+        .select('text post parentComment createdAt')
+        .populate('post', 'text type status author')
+        .sort({ createdAt: -1 })
+        .limit(24)
         .lean(),
       Conversation.find({
         participants: req.user._id,
@@ -101,8 +112,16 @@ const globalSearch = async (req, res) => {
       }
     });
     const chats = [...chatsByParticipant.values()].slice(0, 8);
+    const comments = authoredComments
+      .filter((comment) => {
+        if (!comment.post) return false;
+        return !comment.post.status
+          || comment.post.status === 'approved'
+          || comment.post.author?.toString() === req.user._id.toString();
+      })
+      .slice(0, 8);
 
-    res.json({ success: true, query, results: { users, jobs, posts, chats } });
+    res.json({ success: true, query, results: { users, jobs, posts, comments, chats } });
   } catch (error) {
     console.error('Global search error:', error);
     res.status(500).json({ message: 'Unable to search right now.' });

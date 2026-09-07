@@ -19,6 +19,9 @@ const getComments = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
+    const highlightId = /^[a-f\d]{24}$/i.test(String(req.query.highlight || ''))
+      ? String(req.query.highlight)
+      : '';
 
     const post = await Post.findById(postId).select('author status');
     if (!post || !canViewPost(post, req.user)) {
@@ -38,6 +41,24 @@ const getComments = async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
+
+    if (highlightId) {
+      const highlighted = await Comment.findOne({ _id: highlightId, post: postId }).select('parentComment');
+      const rootId = highlighted?.parentComment || highlighted?._id;
+      const rootLoaded = rootId && comments.some((comment) => comment._id.toString() === rootId.toString());
+      if (rootId && !rootLoaded) {
+        const highlightedThread = await Comment.findById(rootId)
+          .populate('author', 'name profilePic role openToOpportunities profileThemeVariant')
+          .populate({
+            path: 'replies',
+            populate: {
+              path: 'author',
+              select: 'name profilePic role openToOpportunities profileThemeVariant',
+            },
+          });
+        if (highlightedThread) comments.push(highlightedThread);
+      }
+    }
 
     const [total, allTotal] = await Promise.all([
       Comment.countDocuments({ post: postId, parentComment: null }),
@@ -78,7 +99,7 @@ const addComment = async (req, res) => {
     const text = cleanString(req.body.text);
 
     if (!text) return sendValidationError(res, { text: 'Comment text is required.' });
-    if (text.length < 3) return sendValidationError(res, { text: 'Comment must contain at least 3 characters.' });
+    if (text.length < 1) return sendValidationError(res, { text: 'Comment must contain at least 1 character.' });
     if (text.length > 500) return sendValidationError(res, { text: 'Comment cannot exceed 500 characters.' });
 
     const post = await Post.findById(postId);
@@ -147,7 +168,7 @@ const replyToComment = async (req, res) => {
     const text = cleanString(req.body.text);
 
     if (!text) return sendValidationError(res, { text: 'Reply text is required.' });
-    if (text.length < 3) return sendValidationError(res, { text: 'Reply must contain at least 3 characters.' });
+    if (text.length < 1) return sendValidationError(res, { text: 'Reply must contain at least 1 character.' });
     if (text.length > 500) return sendValidationError(res, { text: 'Reply cannot exceed 500 characters.' });
 
     const parentComment = await Comment.findById(commentId);
