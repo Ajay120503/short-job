@@ -149,6 +149,60 @@ const scoreTermGroup = (targets, sources, maxScore) => {
   return Math.min(maxScore, (totalStrength / targets.length) * maxScore);
 };
 
+const getRequirementGroupMatch = (requirements, applicantTerms) => {
+  const matched = [];
+  const missing = [];
+  let totalStrength = 0;
+
+  requirements.forEach((requirement) => {
+    const strength = bestTermMatch(requirement, applicantTerms);
+    totalStrength += strength;
+    if (strength >= 0.7) matched.push(requirement);
+    else missing.push(requirement);
+  });
+
+  return {
+    matched,
+    missing,
+    percent: requirements.length
+      ? Math.round((totalStrength / requirements.length) * 100)
+      : null,
+  };
+};
+
+const calculateApplicantRequirementMatch = (job, applicant) => {
+  const requiredSkills = toUniqueTerms(job.skillsRequired);
+  const requiredQualifications = toUniqueTerms(job.requiredQualifications);
+  const applicantSkills = toUniqueTerms([
+    ...(applicant?.skills || []),
+    ...(applicant?.interests || []),
+    applicant?.subject,
+    applicant?.profession,
+    applicant?.currentPosition,
+  ]);
+  const applicantQualifications = toUniqueTerms([
+    ...(applicant?.qualifications || []),
+    applicant?.educationLevel,
+    applicant?.subject,
+  ]);
+  const skills = getRequirementGroupMatch(requiredSkills, applicantSkills);
+  const qualifications = getRequirementGroupMatch(requiredQualifications, applicantQualifications);
+  const skillWeight = requiredSkills.length ? 65 : 0;
+  const qualificationWeight = requiredQualifications.length ? 35 : 0;
+  const totalWeight = skillWeight + qualificationWeight;
+  const score = totalWeight
+    ? Math.round((((skills.percent || 0) * skillWeight) + ((qualifications.percent || 0) * qualificationWeight)) / totalWeight)
+    : null;
+
+  return {
+    score,
+    skills,
+    qualifications,
+    requiredCount: requiredSkills.length + requiredQualifications.length,
+    matchedCount: skills.matched.length + qualifications.matched.length,
+  };
+};
+
 const countContentHits = (content, terms) =>
   terms.filter((term) => term.length > 2 && content.includes(term)).length;
 
@@ -1086,12 +1140,22 @@ const getApplicants = async (req, res) => {
       query.status = status;
     }
 
-    const applications = await Application.find(query)
+    const applicationDocuments = await Application.find(query)
       .populate(
         'applicant',
         'name profilePic skills qualifications email phone educationLevel city state bio age experience subject profession currentPosition currentCompany institutionName linkedinUrl resumeUrl interests openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant'
       )
       .sort({ createdAt: -1 });
+
+    const applications = applicationDocuments
+      .map((application) => ({
+        ...application.toObject(),
+        jobMatch: calculateApplicantRequirementMatch(job, application.applicant),
+      }))
+      .sort((first, second) => {
+        const scoreDifference = (second.jobMatch.score ?? -1) - (first.jobMatch.score ?? -1);
+        return scoreDifference || new Date(second.createdAt) - new Date(first.createdAt);
+      });
 
     res.json({ success: true, applications });
   } catch (error) {
