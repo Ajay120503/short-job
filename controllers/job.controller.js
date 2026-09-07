@@ -75,6 +75,8 @@ const normalizeListInput = (value = []) => {
 };
 
 const SHORT_JOB_TYPES = ['few_hours', 'one_day_gig', 'weekend_only', 'short_term'];
+const JOB_PAYOUT_MIN = 0.01;
+const JOB_PAYOUT_MAX = 1000000000;
 const usesDailyWorkingHours = (type) => type === 'weekend_only' || type === 'short_term';
 const durationUnitForType = (type) => usesDailyWorkingHours(type) ? 'days' : 'hours';
 const calculateScheduleHours = (startTime, endTime) => {
@@ -84,6 +86,22 @@ const calculateScheduleHours = (startTime, endTime) => {
   let minutes = endHour * 60 + endMinute - (startHour * 60 + startMinute);
   if (minutes <= 0) minutes += 24 * 60;
   return Number((minutes / 60).toFixed(2));
+};
+
+const getJobPayoutError = (value) => {
+  const text = String(value ?? '').trim();
+  if (!text) return 'Payout / salary is required.';
+  if (!/^\d+(?:\.\d{1,2})?$/.test(text)) {
+    return 'Enter a whole number or a decimal with no more than 2 digits after the decimal point.';
+  }
+  const amount = Number(text);
+  if (!Number.isFinite(amount) || amount < JOB_PAYOUT_MIN) {
+    return 'Payout / salary must be at least 0.01.';
+  }
+  if (amount > JOB_PAYOUT_MAX) {
+    return 'Payout / salary cannot exceed 1,000,000,000.';
+  }
+  return '';
 };
 
 const validateJobSchedule = ({ shortJobType, durationUnit, durationValue, workingHoursPerDay, jobDate }) => {
@@ -102,13 +120,17 @@ const validateJobSchedule = ({ shortJobType, durationUnit, durationValue, workin
 
   const duration = Number(durationValue);
   if (!Number.isFinite(duration) || duration <= 0) {
-    errors.durationValue = 'Enter a positive duration.';
+    errors.durationValue = usesDailyWorkingHours(shortJobType)
+      ? 'Enter a valid number of working days.'
+      : 'Enter a valid number of hours.';
+  } else if (expectedUnit === 'hours' && duration < 0.25) {
+    errors.durationValue = 'Duration must be at least 0.25 hours (15 minutes).';
   } else if (expectedUnit === 'hours' && duration > 24) {
-    errors.durationValue = 'Duration cannot exceed 24 hours.';
+    errors.durationValue = 'Duration must be between 0.25 and 24 hours.';
   } else if (shortJobType === 'weekend_only' && duration !== 2) {
     errors.durationValue = 'Weekend jobs must run for exactly 2 days.';
-  } else if (shortJobType === 'short_term' && (!Number.isInteger(duration) || duration > 365)) {
-    errors.durationValue = 'Short-Term duration must be 1 to 365 whole days.';
+  } else if (shortJobType === 'short_term' && (!Number.isInteger(duration) || duration > 7)) {
+    errors.durationValue = 'Short-Term duration must be 1 to 7 whole days.';
   }
 
   if (usesDailyWorkingHours(shortJobType)) {
@@ -649,8 +671,10 @@ const createJob = async (req, res) => {
     const parsedDeadline = parseLocalDate(deadline);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const earliestJobDate = new Date(today);
+    earliestJobDate.setDate(earliestJobDate.getDate() + 1);
     if (!parsedJobDate) errors.jobDate = 'Choose a valid job date.';
-    else if (parsedJobDate < today) errors.jobDate = 'Job date cannot be in the past.';
+    else if (parsedJobDate < earliestJobDate) errors.jobDate = 'Job date must be tomorrow or a later date.';
     Object.assign(errors, validateJobSchedule({
       shortJobType,
       durationUnit: duration.unit,
@@ -666,7 +690,8 @@ const createJob = async (req, res) => {
     if (!/^\S+@\S+\.\S+$/.test(contactEmail) || contactEmail.length > 254 || emailLocalPart.length < 2 || emailLocalPart.length > 20) errors.contactEmail = 'Enter a valid email with 2 to 20 characters before @.';
     if (!['onsite', 'remote', 'hybrid'].includes(location)) errors.location = 'Choose on-site, remote, or hybrid.';
     if (!['INR', 'USD'].includes(currency)) errors.currency = 'Choose a supported currency.';
-    if (!Number.isFinite(stipend) || stipend <= 0) errors.stipend = 'Enter a paid amount greater than zero.';
+    const payoutError = getJobPayoutError(req.body.stipend);
+    if (payoutError) errors.stipend = payoutError;
     if (!Number.isInteger(maxApplicants) || maxApplicants < 0 || maxApplicants > 100) errors.maxApplicants = 'Applicant limit must be a whole number between 0 and 100.';
 
     const requiredJobText = {
@@ -676,9 +701,11 @@ const createJob = async (req, res) => {
       workplaceState: [workplaceState, JOB_TEXT_MAX_LENGTH, 'State'],
       workplaceCountry: [workplaceCountry, JOB_TEXT_MAX_LENGTH, 'Country'],
     };
-    for (const [field, [value, limit, label]] of Object.entries(requiredJobText)) {
-      if (!value) errors[field] = `${label} is required.`;
-      else if (value.length < JOB_TEXT_MIN_LENGTH || value.length > limit) errors[field] = `${label} must contain ${JOB_TEXT_MIN_LENGTH} to ${limit} characters.`;
+    if (location !== 'remote') {
+      for (const [field, [value, limit, label]] of Object.entries(requiredJobText)) {
+        if (!value) errors[field] = `${label} is required.`;
+        else if (value.length < JOB_TEXT_MIN_LENGTH || value.length > limit) errors[field] = `${label} must contain ${JOB_TEXT_MIN_LENGTH} to ${limit} characters.`;
+      }
     }
     const qualifications = normalizeListInput(requiredQualifications);
     if (qualifications.length > JOB_LIST_MAX_ITEMS) errors.requiredQualifications = `Add no more than ${JOB_LIST_MAX_ITEMS} qualifications.`;
@@ -713,11 +740,11 @@ const createJob = async (req, res) => {
       currency,
       stipend,
       location,
-      workplaceName,
-      workplaceAddress,
-      workplaceCity,
-      workplaceState,
-      workplaceCountry,
+      workplaceName: location === 'remote' ? undefined : workplaceName,
+      workplaceAddress: location === 'remote' ? undefined : workplaceAddress,
+      workplaceCity: location === 'remote' ? undefined : workplaceCity,
+      workplaceState: location === 'remote' ? undefined : workplaceState,
+      workplaceCountry: location === 'remote' ? undefined : workplaceCountry,
       requiredQualifications: qualifications.join(', '),
       skillsRequired: skills,
       deadline: parsedDeadline,
@@ -859,17 +886,30 @@ const updateJob = async (req, res) => {
     if (job.description.length > JOB_DESCRIPTION_MAX_LENGTH) return sendValidationError(res, { description: `Description cannot exceed ${JOB_DESCRIPTION_MAX_LENGTH} characters.` });
 
     const updateTextRules = {
-      institutionName: [JOB_TEXT_MAX_LENGTH, 'Organization name'],
       workplaceName: [JOB_TEXT_MAX_LENGTH, 'Workplace name'],
       workplaceAddress: [JOB_ADDRESS_MAX_LENGTH, 'Street address'],
       workplaceCity: [JOB_TEXT_MAX_LENGTH, 'City'],
       workplaceState: [JOB_TEXT_MAX_LENGTH, 'State'],
       workplaceCountry: [JOB_TEXT_MAX_LENGTH, 'Country'],
     };
-    for (const [field, [maxLength, label]] of Object.entries(updateTextRules)) {
-      job[field] = cleanString(job[field]);
-      if (job[field].length < JOB_TEXT_MIN_LENGTH || job[field].length > maxLength) {
-        return sendValidationError(res, { [field]: `${label} must contain ${JOB_TEXT_MIN_LENGTH} to ${maxLength} characters.` });
+    job.institutionName = cleanString(job.institutionName);
+    if (job.institutionName.length < JOB_TEXT_MIN_LENGTH || job.institutionName.length > JOB_TEXT_MAX_LENGTH) {
+      return sendValidationError(res, { institutionName: `Organization name must contain ${JOB_TEXT_MIN_LENGTH} to ${JOB_TEXT_MAX_LENGTH} characters.` });
+    }
+    if (job.location === 'remote') {
+      job.workplaceName = undefined;
+      job.workplaceAddress = undefined;
+      job.workplaceCity = undefined;
+      job.workplaceState = undefined;
+      job.workplaceCountry = undefined;
+      job.coordinates = undefined;
+      job.location_point = undefined;
+    } else {
+      for (const [field, [maxLength, label]] of Object.entries(updateTextRules)) {
+        job[field] = cleanString(job[field]);
+        if (job[field].length < JOB_TEXT_MIN_LENGTH || job[field].length > maxLength) {
+          return sendValidationError(res, { [field]: `${label} must contain ${JOB_TEXT_MIN_LENGTH} to ${maxLength} characters.` });
+        }
       }
     }
 
@@ -908,6 +948,12 @@ const updateJob = async (req, res) => {
     if (req.body.jobDate !== undefined) {
       const parsedJobDate = parseLocalDate(req.body.jobDate);
       if (!parsedJobDate) return sendValidationError(res, { jobDate: 'Please provide a valid job date.' });
+      const earliestJobDate = new Date();
+      earliestJobDate.setHours(0, 0, 0, 0);
+      earliestJobDate.setDate(earliestJobDate.getDate() + 1);
+      if (parsedJobDate < earliestJobDate) {
+        return sendValidationError(res, { jobDate: 'Job date must be tomorrow or a later date.' });
+      }
       job.jobDate = parsedJobDate;
     }
     if (SHORT_JOB_TYPES.includes(job.shortJobType)) {
@@ -928,15 +974,14 @@ const updateJob = async (req, res) => {
     });
     if (Object.keys(scheduleErrors).length) return sendValidationError(res, scheduleErrors);
     if (!usesDailyWorkingHours(job.shortJobType)) job.workingHoursPerDay = undefined;
+    const payoutError = getJobPayoutError(job.stipend);
+    if (payoutError) return sendValidationError(res, { stipend: payoutError });
     job.stipend = Number(job.stipend);
-    if (!Number.isFinite(job.stipend) || job.stipend <= 0) {
-      return sendValidationError(res, { stipend: 'Enter a paid amount greater than zero.' });
-    }
     if (job.jobDate && job.deadline && new Date(job.deadline) > new Date(job.jobDate)) {
       return res.status(400).json({ message: 'Application deadline cannot be after the job date.' });
     }
 
-    const coordinates = getJobCoordinatesFromBody(req.body);
+    const coordinates = job.location === 'remote' ? undefined : getJobCoordinatesFromBody(req.body);
     if (coordinates === null) {
       return res.status(400).json({ message: 'Please provide valid workplace coordinates.' });
     }
