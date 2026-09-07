@@ -18,9 +18,9 @@ const postSchema = new mongoose.Schema(
       validate: {
         validator(value) {
           const length = String(value || '').trim().length;
-          return this.type === 'job' ? length >= 3 : length >= 20;
+          return length >= 3;
         },
-        message: 'Post text must contain at least 20 characters',
+        message: 'Post text must contain at least 3 characters',
       },
       default: '',
     },

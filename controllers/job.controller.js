@@ -14,8 +14,8 @@ const {
   JOB_ADDRESS_MAX_LENGTH,
   JOB_DESCRIPTION_MAX_LENGTH,
   JOB_LIST_MAX_ITEMS,
+  JOB_LIST_ITEM_MAX_LENGTH,
   LIST_ITEM_MIN_LENGTH,
-  LIST_ITEM_MAX_LENGTH,
   cleanString,
   sendValidationError,
   sendCreateError,
@@ -72,6 +72,48 @@ const normalizeListInput = (value = []) => {
         .filter(Boolean)
     ),
   ];
+};
+
+const SHORT_JOB_TYPES = ['few_hours', 'one_day_gig', 'weekend_only', 'short_term'];
+const usesDailyWorkingHours = (type) => type === 'weekend_only' || type === 'short_term';
+const durationUnitForType = (type) => usesDailyWorkingHours(type) ? 'days' : 'hours';
+
+const validateJobSchedule = ({ shortJobType, durationUnit, durationValue, workingHoursPerDay, jobDate }) => {
+  const errors = {};
+  if (!SHORT_JOB_TYPES.includes(shortJobType)) {
+    errors.shortJobType = 'Choose Few Hours, One Day, Weekend, or Short-Term.';
+    return errors;
+  }
+
+  const expectedUnit = durationUnitForType(shortJobType);
+  if (durationUnit !== expectedUnit) {
+    errors.durationUnit = usesDailyWorkingHours(shortJobType)
+      ? 'Weekend and Short-Term jobs use days.'
+      : 'Few Hours and One Day jobs use hours.';
+  }
+
+  const duration = Number(durationValue);
+  if (!Number.isFinite(duration) || duration <= 0) {
+    errors.durationValue = 'Enter a positive duration.';
+  } else if (expectedUnit === 'hours' && duration > 24) {
+    errors.durationValue = 'Duration cannot exceed 24 hours.';
+  } else if (shortJobType === 'weekend_only' && duration !== 2) {
+    errors.durationValue = 'Weekend jobs must run for exactly 2 days.';
+  } else if (shortJobType === 'short_term' && (!Number.isInteger(duration) || duration > 365)) {
+    errors.durationValue = 'Short-Term duration must be 1 to 365 whole days.';
+  }
+
+  if (usesDailyWorkingHours(shortJobType)) {
+    const hours = Number(workingHoursPerDay);
+    if (!Number.isFinite(hours) || hours < 0.25 || hours > 24) {
+      errors.workingHoursPerDay = 'Working hours per day must be between 0.25 and 24.';
+    }
+  }
+
+  if (shortJobType === 'weekend_only' && jobDate instanceof Date && !Number.isNaN(jobDate.getTime()) && jobDate.getDay() !== 6) {
+    errors.jobDate = 'Weekend jobs must start on a Saturday.';
+  }
+  return errors;
 };
 
 const termMatchStrength = (source, target) => {
@@ -264,6 +306,7 @@ const getNearbyJobCities = async (req, res) => {
     const radiusKm = 100;
     const jobs = await JobPost.find({
         isActive: true,
+        isPaid: true,
         status: 'approved',
         deadline: { $gte: getJobDeadlineCutoff() },
         workplaceCity: { $exists: true, $nin: ['', null] },
@@ -317,6 +360,7 @@ const getNearbyJobAreas = async (req, res) => {
       : 5;
     const jobs = await JobPost.find({
       isActive: true,
+      isPaid: true,
       status: 'approved',
       deadline: { $gte: getJobDeadlineCutoff() },
       location_point: { $geoWithin: { $centerSphere: [[lng, lat], radiusKm / 6371] } },
@@ -354,19 +398,14 @@ const getNearbyJobAreas = async (req, res) => {
 const getJobs = async (req, res) => {
   try {
     const {
-      paid, isPaid, location, roleType, shortJobType, city, state, area,
+      location, roleType, shortJobType, city, state, area,
       lat, lng, radiusKm, search, page: pageStr, limit: limitStr,
     } = req.query;
     const page = parseInt(pageStr) || 1;
     const limit = parseInt(limitStr) || 10;
     const skip = (page - 1) * limit;
 
-    const filters = { isActive: true, deadline: { $gte: getJobDeadlineCutoff() } };
-
-    const paidFilter = isPaid ?? paid;
-    if (paidFilter !== undefined) {
-      filters.isPaid = paidFilter === 'true';
-    }
+    const filters = { isActive: true, isPaid: true, deadline: { $gte: getJobDeadlineCutoff() } };
 
     if (location) {
       filters.location = location;
@@ -506,8 +545,9 @@ const createJob = async (req, res) => {
     const workplaceCountry = cleanString(req.body.workplaceCountry);
     const requiredQualifications = cleanString(req.body.requiredQualifications);
     const currency = cleanString(req.body.currency) || 'INR';
-    const isPaid = req.body.isPaid === 'true' || req.body.isPaid === true;
+    const isPaid = true;
     const stipend = Number(req.body.stipend);
+    const workingHoursPerDay = Number(req.body.workingHoursPerDay);
     const maxApplicants = req.body.maxApplicants === '' || req.body.maxApplicants == null
       ? 0 : Number(req.body.maxApplicants);
     const skills = normalizeListInput(req.body.skillsRequired);
@@ -523,18 +563,11 @@ const createJob = async (req, res) => {
     else if (institutionName.length < JOB_TEXT_MIN_LENGTH || institutionName.length > JOB_TEXT_MAX_LENGTH) errors.institutionName = `Organization name must contain ${JOB_TEXT_MIN_LENGTH} to ${JOB_TEXT_MAX_LENGTH} characters.`;
 
     const roleTypes = ['teacher', 'professor', 'hod', 'principal', 'intern', 'volunteer', 'assistant', 'research', 'other'];
-    const shortJobTypes = ['one_day_gig', 'few_hours', 'weekend_only', 'short_term', 'ongoing_part_time', 'full_time', 'internship', 'volunteer'];
     if (!roleTypes.includes(roleType)) errors.roleType = 'Choose a valid role type.';
-    if (!shortJobTypes.includes(shortJobType)) errors.shortJobType = 'Choose a valid short job type.';
 
     const duration = req.body.duration && typeof req.body.duration === 'object'
       ? req.body.duration : { unit: durationUnit, value: Number(durationValue) };
     const numericDuration = Number(duration.value);
-    if (!['hours', 'days'].includes(duration.unit)) errors.durationUnit = 'Duration unit must be hours or days.';
-    if (!Number.isFinite(numericDuration) || numericDuration < 0.25) errors.durationValue = 'Duration must be at least 0.25.';
-    else if ((duration.unit === 'hours' && numericDuration > 24) || (duration.unit === 'days' && numericDuration > 365)) {
-      errors.durationValue = `Duration cannot exceed ${duration.unit === 'hours' ? '24 hours' : '365 days'}.`;
-    }
 
     const validTime = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
     if (!validTime.test(startTime)) errors.startTime = 'Choose a valid start time.';
@@ -547,6 +580,13 @@ const createJob = async (req, res) => {
     today.setHours(0, 0, 0, 0);
     if (!parsedJobDate) errors.jobDate = 'Choose a valid job date.';
     else if (parsedJobDate < today) errors.jobDate = 'Job date cannot be in the past.';
+    Object.assign(errors, validateJobSchedule({
+      shortJobType,
+      durationUnit: duration.unit,
+      durationValue: numericDuration,
+      workingHoursPerDay,
+      jobDate: parsedJobDate,
+    }));
     if (!parsedDeadline) errors.deadline = 'Choose a valid application deadline.';
     else if (parsedDeadline < today) errors.deadline = 'Application deadline cannot be in the past.';
     else if (!errors.jobDate && parsedDeadline > parsedJobDate) errors.deadline = 'Application deadline cannot be after the job date.';
@@ -555,7 +595,7 @@ const createJob = async (req, res) => {
     if (!/^\S+@\S+\.\S+$/.test(contactEmail) || contactEmail.length > 254 || emailLocalPart.length < 2 || emailLocalPart.length > 20) errors.contactEmail = 'Enter a valid email with 2 to 20 characters before @.';
     if (!['onsite', 'remote', 'hybrid'].includes(location)) errors.location = 'Choose on-site, remote, or hybrid.';
     if (!['INR', 'USD'].includes(currency)) errors.currency = 'Choose a supported currency.';
-    if (isPaid && (!Number.isFinite(stipend) || stipend <= 0)) errors.stipend = 'Enter a paid amount greater than zero.';
+    if (!Number.isFinite(stipend) || stipend <= 0) errors.stipend = 'Enter a paid amount greater than zero.';
     if (!Number.isInteger(maxApplicants) || maxApplicants < 0 || maxApplicants > 100) errors.maxApplicants = 'Applicant limit must be a whole number between 0 and 100.';
 
     const requiredJobText = {
@@ -571,9 +611,9 @@ const createJob = async (req, res) => {
     }
     const qualifications = normalizeListInput(requiredQualifications);
     if (qualifications.length > JOB_LIST_MAX_ITEMS) errors.requiredQualifications = `Add no more than ${JOB_LIST_MAX_ITEMS} qualifications.`;
-    else if (qualifications.some((item) => item.length < LIST_ITEM_MIN_LENGTH || item.length > LIST_ITEM_MAX_LENGTH)) errors.requiredQualifications = `Each qualification must contain ${LIST_ITEM_MIN_LENGTH} to ${LIST_ITEM_MAX_LENGTH} characters.`;
+    else if (qualifications.some((item) => item.length < LIST_ITEM_MIN_LENGTH || item.length > JOB_LIST_ITEM_MAX_LENGTH)) errors.requiredQualifications = `Each qualification must contain ${LIST_ITEM_MIN_LENGTH} to ${JOB_LIST_ITEM_MAX_LENGTH} characters.`;
     if (skills.length > JOB_LIST_MAX_ITEMS) errors.skillsRequired = `Add no more than ${JOB_LIST_MAX_ITEMS} skills.`;
-    else if (skills.some((skill) => skill.length < LIST_ITEM_MIN_LENGTH || skill.length > LIST_ITEM_MAX_LENGTH)) errors.skillsRequired = `Each skill must contain ${LIST_ITEM_MIN_LENGTH} to ${LIST_ITEM_MAX_LENGTH} characters.`;
+    else if (skills.some((skill) => skill.length < LIST_ITEM_MIN_LENGTH || skill.length > JOB_LIST_ITEM_MAX_LENGTH)) errors.skillsRequired = `Each skill must contain ${LIST_ITEM_MIN_LENGTH} to ${JOB_LIST_ITEM_MAX_LENGTH} characters.`;
 
     if (Object.keys(errors).length) return sendValidationError(res, errors);
 
@@ -594,12 +634,13 @@ const createJob = async (req, res) => {
       roleType,
       shortJobType,
       duration: { unit: duration.unit, value: numericDuration },
+      workingHoursPerDay: usesDailyWorkingHours(shortJobType) ? workingHoursPerDay : undefined,
       jobDate: parsedJobDate,
       startTime,
       endTime,
       isPaid,
       currency,
-      stipend: isPaid ? stipend : 0,
+      stipend,
       location,
       workplaceName,
       workplaceAddress,
@@ -722,12 +763,12 @@ const updateJob = async (req, res) => {
     }
 
     const allowedFields = [
-      'title', 'description', 'institutionName', 'roleType', 'isPaid', 'stipend', 'currency',
+      'title', 'description', 'institutionName', 'roleType', 'stipend', 'currency',
       'location', 'requiredQualifications', 'skillsRequired',
       'deadline', 'contactEmail', 'maxApplicants', 'isActive',
       'workplaceName', 'workplaceAddress', 'workplaceCity',
       'workplaceState', 'workplaceCountry',
-      'shortJobType', 'jobDate', 'startTime', 'endTime',
+      'shortJobType', 'jobDate', 'startTime', 'endTime', 'workingHoursPerDay',
     ];
 
     for (const field of allowedFields) {
@@ -735,6 +776,7 @@ const updateJob = async (req, res) => {
         job[field] = req.body[field];
       }
     }
+    job.isPaid = true;
 
     job.title = cleanString(job.title);
     job.description = cleanString(job.description);
@@ -761,8 +803,8 @@ const updateJob = async (req, res) => {
     }
 
     const updateQualifications = normalizeListInput(job.requiredQualifications);
-    if (updateQualifications.length > JOB_LIST_MAX_ITEMS || updateQualifications.some((item) => item.length < LIST_ITEM_MIN_LENGTH || item.length > LIST_ITEM_MAX_LENGTH)) {
-      return sendValidationError(res, { requiredQualifications: `Use up to ${JOB_LIST_MAX_ITEMS} qualifications of ${LIST_ITEM_MIN_LENGTH} to ${LIST_ITEM_MAX_LENGTH} characters each.` });
+    if (updateQualifications.length > JOB_LIST_MAX_ITEMS || updateQualifications.some((item) => item.length < LIST_ITEM_MIN_LENGTH || item.length > JOB_LIST_ITEM_MAX_LENGTH)) {
+      return sendValidationError(res, { requiredQualifications: `Use up to ${JOB_LIST_MAX_ITEMS} qualifications of ${LIST_ITEM_MIN_LENGTH} to ${JOB_LIST_ITEM_MAX_LENGTH} characters each.` });
     }
     job.requiredQualifications = updateQualifications.join(', ');
 
@@ -779,16 +821,13 @@ const updateJob = async (req, res) => {
     if (req.body.skillsRequired !== undefined) {
       job.skillsRequired = normalizeListInput(req.body.skillsRequired);
     }
-    if (job.skillsRequired.length > JOB_LIST_MAX_ITEMS || job.skillsRequired.some((item) => item.length < LIST_ITEM_MIN_LENGTH || item.length > LIST_ITEM_MAX_LENGTH)) {
-      return sendValidationError(res, { skillsRequired: `Use up to ${JOB_LIST_MAX_ITEMS} skills of ${LIST_ITEM_MIN_LENGTH} to ${LIST_ITEM_MAX_LENGTH} characters each.` });
+    if (job.skillsRequired.length > JOB_LIST_MAX_ITEMS || job.skillsRequired.some((item) => item.length < LIST_ITEM_MIN_LENGTH || item.length > JOB_LIST_ITEM_MAX_LENGTH)) {
+      return sendValidationError(res, { skillsRequired: `Use up to ${JOB_LIST_MAX_ITEMS} skills of ${LIST_ITEM_MIN_LENGTH} to ${JOB_LIST_ITEM_MAX_LENGTH} characters each.` });
     }
     if (req.body.duration || req.body.durationUnit || req.body.durationValue) {
       const duration = req.body.duration && typeof req.body.duration === 'object' ? req.body.duration : { unit: req.body.durationUnit, value: Number(req.body.durationValue) };
-      if (!['hours', 'days'].includes(duration.unit) || !Number.isFinite(Number(duration.value)) || Number(duration.value) <= 0) return res.status(400).json({ message: 'Duration must be a positive number of hours or days.' });
       job.duration = { unit: duration.unit, value: Number(duration.value) };
     }
-    if (!job.shortJobType) job.shortJobType = 'short_term';
-    if (!job.duration?.value) job.duration = { unit: 'days', value: 1 };
     if (req.body.startTime !== undefined || req.body.endTime !== undefined) {
       const validTime = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
       if (!validTime.test(job.startTime || '') || !validTime.test(job.endTime || '') || job.startTime === job.endTime) {
@@ -796,9 +835,22 @@ const updateJob = async (req, res) => {
       }
     }
     if (req.body.jobDate !== undefined) {
-      const parsedJobDate = new Date(req.body.jobDate);
-      if (Number.isNaN(parsedJobDate.getTime())) return res.status(400).json({ message: 'Please provide a valid job date.' });
+      const parsedJobDate = parseLocalDate(req.body.jobDate);
+      if (!parsedJobDate) return sendValidationError(res, { jobDate: 'Please provide a valid job date.' });
       job.jobDate = parsedJobDate;
+    }
+    const scheduleErrors = validateJobSchedule({
+      shortJobType: job.shortJobType,
+      durationUnit: job.duration?.unit,
+      durationValue: job.duration?.value,
+      workingHoursPerDay: job.workingHoursPerDay,
+      jobDate: job.jobDate ? new Date(job.jobDate) : null,
+    });
+    if (Object.keys(scheduleErrors).length) return sendValidationError(res, scheduleErrors);
+    if (!usesDailyWorkingHours(job.shortJobType)) job.workingHoursPerDay = undefined;
+    job.stipend = Number(job.stipend);
+    if (!Number.isFinite(job.stipend) || job.stipend <= 0) {
+      return sendValidationError(res, { stipend: 'Enter a paid amount greater than zero.' });
     }
     if (job.jobDate && job.deadline && new Date(job.deadline) > new Date(job.jobDate)) {
       return res.status(400).json({ message: 'Application deadline cannot be after the job date.' });
@@ -1094,7 +1146,7 @@ const getMyApplications = async (req, res) => {
     const applications = await Application.find(query)
       .populate({
         path: 'jobPost',
-        select: 'title institutionName location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates roleType shortJobType duration jobDate startTime endTime isPaid stipend deadline',
+        select: 'title institutionName location workplaceName workplaceAddress workplaceCity workplaceState workplaceCountry coordinates roleType shortJobType duration workingHoursPerDay jobDate startTime endTime isPaid stipend deadline',
         populate: {
           path: 'postedBy',
           select: 'name profilePic openToOpportunities badges isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant',
@@ -1175,6 +1227,7 @@ const getMatchedJobs = async (req, res) => {
 
     const jobs = await JobPost.find({
       isActive: true,
+      isPaid: true,
       status: 'approved',
       postedBy: { $ne: req.user._id },
       deadline: { $gte: getJobDeadlineCutoff() },
@@ -1277,6 +1330,7 @@ const getJobsMap = async (req, res) => {
     const { city, state } = req.query;
     let query = {
       isActive: true,
+      isPaid: true,
       status: 'approved',
       deadline: { $gte: getJobDeadlineCutoff() },
     };

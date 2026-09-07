@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middlewares/auth.middleware');
 const { optionalAuth } = require('../middlewares/auth.middleware');
-const { cacheResponse } = require('../middlewares/cache.middleware');
 const {
   getComments,
   addComment,
@@ -12,7 +11,7 @@ const {
 } = require('../controllers/comment.controller');
 
 // Public route
-router.get('/posts/:postId/comments', optionalAuth, cacheResponse({ ttl: 20, varyByUser: true }), getComments);
+router.get('/posts/:postId/comments', optionalAuth, getComments);
 
 // Protected routes
 router.post('/posts/:postId/comments', authMiddleware, addComment);

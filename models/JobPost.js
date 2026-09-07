@@ -37,12 +37,20 @@ const jobPostSchema = new mongoose.Schema(
     },
     shortJobType: {
       type: String,
-      enum: ['one_day_gig', 'few_hours', 'weekend_only', 'short_term', 'ongoing_part_time', 'full_time', 'internship', 'volunteer'],
+      // Legacy values remain readable so older records can still be migrated or edited;
+      // the create/update controllers only accept the four current short-job types.
+      enum: ['few_hours', 'one_day_gig', 'weekend_only', 'short_term', 'ongoing_part_time', 'full_time', 'internship', 'volunteer'],
       required: [true, 'Short job type is required'],
     },
     duration: {
       unit: { type: String, enum: ['hours', 'days'], required: true },
       value: { type: Number, required: true, min: [0.25, 'Duration must be at least 0.25'] },
+    },
+    workingHoursPerDay: {
+      type: Number,
+      min: [0.25, 'Working hours per day must be at least 0.25'],
+      max: [24, 'Working hours per day cannot exceed 24'],
+      default: undefined,
     },
     jobDate: {
       type: Date,
@@ -59,7 +67,7 @@ const jobPostSchema = new mongoose.Schema(
     },
     isPaid: {
       type: Boolean,
-      default: false,
+      default: true,
     },
     currency: {
       type: String,
@@ -68,7 +76,8 @@ const jobPostSchema = new mongoose.Schema(
     },
     stipend: {
       type: Number,
-      default: 0,
+      required: [true, 'Paid amount is required'],
+      min: [0.01, 'Paid amount must be greater than zero'],
     },
     location: {
       type: String,
@@ -112,10 +121,17 @@ const jobPostSchema = new mongoose.Schema(
     },
     requiredQualifications: {
       type: String,
-      maxlength: [108, 'Required qualifications cannot exceed 5 entries of 20 characters'],
+      maxlength: [258, 'Required qualifications cannot exceed 5 entries of 50 characters'],
       default: '',
     },
-    skillsRequired: [{ type: String, trim: true, minlength: [3, 'Each skill must contain at least 3 characters'], maxlength: [20, 'Each skill must be 20 characters or fewer'] }],
+    skillsRequired: {
+      type: [{ type: String, trim: true, minlength: [3, 'Each skill must contain at least 3 characters'], maxlength: [50, 'Each skill must be 50 characters or fewer'] }],
+      validate: {
+        validator: (items) => (items || []).length <= 5,
+        message: 'Add no more than 5 skills',
+      },
+      default: [],
+    },
     deadline: {
       type: Date,
       required: [true, 'Application deadline is required'],
