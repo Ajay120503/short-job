@@ -440,11 +440,14 @@ const toggleLike = async (req, res) => {
 
     const isLiked = post.likes.includes(req.user._id);
 
-    if (isLiked) {
-      post.likes.pull(req.user._id);
-    } else {
-      post.likes.push(req.user._id);
+    await Post.updateOne(
+      { _id: post._id },
+      isLiked
+        ? { $pull: { likes: req.user._id } }
+        : { $addToSet: { likes: req.user._id } }
+    );
 
+    if (!isLiked) {
       // Create notification for post author (if not their own post)
       if (post.author.toString() !== req.user._id.toString()) {
         await Notification.create({
@@ -466,12 +469,15 @@ const toggleLike = async (req, res) => {
       }
     }
 
-    await post.save();
+    const updatedPost = await Post.findById(post._id).select('likes');
+    const likes = updatedPost?.likes || [];
 
     res.json({
       success: true,
       isLiked: !isLiked,
-      likesCount: post.likes.length,
+      liked: !isLiked,
+      likes,
+      likesCount: likes.length,
     });
   } catch (error) {
     console.error('Toggle like error:', error);
@@ -495,18 +501,18 @@ const toggleSave = async (req, res) => {
 
     const isSaved = post.saves.includes(req.user._id);
 
-    if (isSaved) {
-      post.saves.pull(req.user._id);
-    } else {
-      post.saves.push(req.user._id);
-    }
-
-    await post.save();
+    await Post.updateOne(
+      { _id: post._id },
+      isSaved
+        ? { $pull: { saves: req.user._id } }
+        : { $addToSet: { saves: req.user._id } }
+    );
+    const updatedPost = await Post.findById(post._id).select('saves');
 
     res.json({
       success: true,
       saved: !isSaved,
-      saves: post.saves,
+      saves: updatedPost?.saves || [],
     });
   } catch (error) {
     console.error('Toggle save error:', error);
@@ -626,14 +632,19 @@ const moderatePost = async (req, res) => {
     const result = await runFakeDetectionRuleOnly(post, 'post');
 
     // Apply decision
-    post.status = result.approved ? 'approved' : 'rejected';
-    post.moderationMeta = {
+    const nextStatus = result.approved ? 'approved' : 'rejected';
+    const moderationMeta = {
       reviewedAt: new Date(),
       reviewMethod: result.approved ? 'auto_approved' : 'auto_rejected',
       autoScore: result.score,
       autoFlags: result.flags,
     };
-    await post.save();
+    await Post.updateOne(
+      { _id: post._id },
+      { $set: { status: nextStatus, moderationMeta } }
+    );
+    post.status = nextStatus;
+    post.moderationMeta = moderationMeta;
 
     // Notify content creator
     try {
@@ -664,10 +675,16 @@ const votePoll = async (req, res) => {
     const optionIndex = Number(req.body.optionIndex);
     if (!post || post.type !== 'poll') return res.status(404).json({ message: 'Poll not found.' });
     if (!Number.isInteger(optionIndex) || !post.pollOptions[optionIndex]) return res.status(400).json({ message: 'Invalid poll option.' });
-    post.pollOptions.forEach((option) => option.votes.pull(req.user._id));
-    post.pollOptions[optionIndex].votes.addToSet(req.user._id);
-    await post.save();
-    res.json({ success: true, pollOptions: post.pollOptions });
+    await Post.updateOne(
+      { _id: post._id },
+      { $pull: { 'pollOptions.$[].votes': req.user._id } }
+    );
+    await Post.updateOne(
+      { _id: post._id },
+      { $addToSet: { [`pollOptions.${optionIndex}.votes`]: req.user._id } }
+    );
+    const updatedPost = await Post.findById(post._id).select('pollOptions');
+    res.json({ success: true, pollOptions: updatedPost?.pollOptions || [] });
   } catch (error) {
     console.error('Vote poll error:', error);
     res.status(500).json({ message: 'Server error.' });
@@ -679,10 +696,14 @@ const toggleRsvp = async (req, res) => {
     const post = await Post.findById(req.params.id);
     if (!post || post.type !== 'event') return res.status(404).json({ message: 'Event not found.' });
     const attending = post.eventDetails.rsvps.some((id) => id.toString() === req.user._id.toString());
-    if (attending) post.eventDetails.rsvps.pull(req.user._id);
-    else post.eventDetails.rsvps.addToSet(req.user._id);
-    await post.save();
-    res.json({ success: true, attending: !attending, count: post.eventDetails.rsvps.length });
+    await Post.updateOne(
+      { _id: post._id },
+      attending
+        ? { $pull: { 'eventDetails.rsvps': req.user._id } }
+        : { $addToSet: { 'eventDetails.rsvps': req.user._id } }
+    );
+    const updatedPost = await Post.findById(post._id).select('eventDetails.rsvps');
+    res.json({ success: true, attending: !attending, count: updatedPost?.eventDetails?.rsvps?.length || 0 });
   } catch (error) {
     console.error('RSVP error:', error);
     res.status(500).json({ message: 'Server error.' });
