@@ -16,6 +16,7 @@ const {
   updateAdminSettings: saveAdminSettings,
 } = require('../utils/adminSettings');
 const { runFakeDetectionRuleOnly } = require('../utils/fakeDetectionRuleOnly');
+const { extractTextFromImages, getContentImageSources } = require('../utils/ocrModeration');
 
 const CONTENT_MODELS = {
   post: { Model: Post, authorField: 'author', populate: 'author' },
@@ -613,7 +614,17 @@ const getContentDetail = async (req, res) => {
       return res.status(404).json({ message: 'Content not found.' });
     }
 
-    res.json({ success: true, content });
+    const contentObject = content.toObject();
+    res.json({
+      success: true,
+      content: {
+        ...contentObject,
+        creatorUnavailable: !contentObject[config.authorField],
+        creatorDisplayName: contentObject[config.authorField]?.name ||
+          (req.params.type === 'job' ? contentObject.institutionName : '') ||
+          'Account unavailable',
+      },
+    });
   } catch (error) {
     console.error('Get content detail error:', error);
     res.status(500).json({ message: 'Server error.' });
@@ -644,6 +655,7 @@ const approveContent = async (req, res) => {
 
     content.status = 'approved';
     content.moderationMeta = {
+      ...(content.moderationMeta?.toObject?.() || content.moderationMeta || {}),
       reviewedBy: req.user._id,
       reviewedAt: new Date(),
       reviewMethod: 'admin_manual',
@@ -701,6 +713,7 @@ const rejectContent = async (req, res) => {
 
     content.status = 'rejected';
     content.moderationMeta = {
+      ...(content.moderationMeta?.toObject?.() || content.moderationMeta || {}),
       reviewedBy: req.user._id,
       reviewedAt: new Date(),
       reviewMethod: 'admin_manual',
@@ -745,6 +758,11 @@ const runContentRuleCheck = async (req, res) => {
     }
 
     const previousStatus = content.status;
+    const ocrMeta = await extractTextFromImages(getContentImageSources(content, type));
+    content.moderationMeta = {
+      ...(content.moderationMeta?.toObject?.() || content.moderationMeta || {}),
+      ...ocrMeta,
+    };
     const result = await runFakeDetectionRuleOnly(content, type);
     content.status = result.approved ? 'approved' : 'rejected';
     content.moderationMeta = {
@@ -777,7 +795,19 @@ const runContentRuleCheck = async (req, res) => {
       } catch (notifyErr) {}
     }
 
-    res.json({ success: true, content, moderationResult: result });
+    await content.populate(config.populate, 'name email profilePic badges category institutionName openToOpportunities isAdmin isSuperAdmin lastActiveAt activeDays followers profileThemeVariant');
+    const contentObject = content.toObject();
+    res.json({
+      success: true,
+      content: {
+        ...contentObject,
+        creatorUnavailable: !contentObject[config.authorField],
+        creatorDisplayName: contentObject[config.authorField]?.name ||
+          (type === 'job' ? contentObject.institutionName : '') ||
+          'Account unavailable',
+      },
+      moderationResult: result,
+    });
   } catch (error) {
     console.error('Run content rule check error:', error);
     res.status(500).json({ message: 'Server error.' });

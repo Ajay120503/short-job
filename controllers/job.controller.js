@@ -6,6 +6,7 @@ const User = require('../models/User');
 const { getIO } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 const { getInitialModerationState, applyInitialRuleModeration } = require('../utils/adminSettings');
+const { extractTextFromImages } = require('../utils/ocrModeration');
 const { pickPriorityPage, toId } = require('../utils/contentOrdering');
 const { getProfileCompletionStatus } = require('../utils/profileCompletion');
 const {
@@ -761,6 +762,10 @@ const createJob = async (req, res) => {
         url: result.secure_url,
         publicId: result.public_id,
       };
+      jobData.moderationMeta = {
+        ...jobData.moderationMeta,
+        ...await extractTextFromImages(req.file),
+      };
     }
     if (coordinates) {
       jobData.coordinates = coordinates;
@@ -1007,12 +1012,23 @@ const updateJob = async (req, res) => {
         url: result.secure_url,
         publicId: result.public_id,
       };
+      job.moderationMeta = {
+        ...(job.moderationMeta?.toObject?.() || job.moderationMeta || {}),
+        ...await extractTextFromImages(req.file),
+      };
     }
 
+    const moderationState = await getInitialModerationState('job');
+    const moderatedState = await applyInitialRuleModeration(job.toObject(), 'job', moderationState);
+    job.status = moderatedState.status;
+    job.moderationMeta = moderatedState.moderationMeta;
     await job.save();
 
     // Keep linked feed post text in sync with job title
-    await Post.updateMany({ jobPost: job._id }, { text: job.title });
+    await Post.updateMany(
+      { jobPost: job._id },
+      { text: job.title, status: job.status, moderationMeta: job.moderationMeta },
+    );
 
     res.json({ success: true, job });
   } catch (error) {

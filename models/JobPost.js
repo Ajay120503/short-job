@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const moderationMetaFields = require('../utils/moderationMetaFields');
 
 const locationPointSchema = new mongoose.Schema(
   {
@@ -221,22 +222,7 @@ const jobPostSchema = new mongoose.Schema(
       enum: ['pending_review', 'approved', 'rejected', 'flagged'],
       default: 'approved',
     },
-    moderationMeta: {
-      reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-      reviewedAt: Date,
-      reviewMethod: {
-        type: String,
-        enum: ['admin_manual', 'auto_approved', 'auto_rejected', 'auto_flagged'],
-      },
-      reviewNotes: String,
-      autoScore: Number,
-      autoFlags: [mongoose.Schema.Types.Mixed],
-      autoReason: String,
-      autoDecision: String,
-      autoSeverity: String,
-      autoReviewedAt: Date,
-      adminWindowExpiredAt: Date,
-    },
+    moderationMeta: moderationMetaFields,
   },
   {
     timestamps: true,

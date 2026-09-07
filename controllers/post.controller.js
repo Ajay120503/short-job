@@ -6,6 +6,7 @@ const { getIO } = require('../config/socket');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 const { runFakeDetectionRuleOnly } = require('../utils/fakeDetectionRuleOnly');
 const { getInitialModerationState, applyInitialRuleModeration } = require('../utils/adminSettings');
+const { extractTextFromImages, getContentImageSources } = require('../utils/ocrModeration');
 const { pickPriorityPage, toId } = require('../utils/contentOrdering');
 const {
   POST_TEXT_MIN_LENGTH,
@@ -237,6 +238,10 @@ const createPost = async (req, res) => {
           publicId: result.public_id,
         });
       }
+      postData.moderationMeta = {
+        ...postData.moderationMeta,
+        ...await extractTextFromImages(req.files),
+      };
     }
 
     const moderatedState = await applyInitialRuleModeration(postData, 'post', moderationState);
@@ -363,6 +368,17 @@ const updatePost = async (req, res) => {
         text: `Post text must contain at least ${POST_TEXT_MIN_LENGTH} characters.`,
       });
     }
+
+    if (removedPublicIds.length > 0 || (req.files && req.files.length > 0)) {
+      post.moderationMeta = {
+        ...(post.moderationMeta?.toObject?.() || post.moderationMeta || {}),
+        ...await extractTextFromImages(getContentImageSources(post, 'post')),
+      };
+    }
+    const moderationState = await getInitialModerationState('post');
+    const moderatedState = await applyInitialRuleModeration(post.toObject(), 'post', moderationState);
+    post.status = moderatedState.status;
+    post.moderationMeta = moderatedState.moderationMeta;
 
     await post.save();
 
@@ -628,16 +644,28 @@ const moderatePost = async (req, res) => {
       return res.status(400).json({ message: 'Post is not pending review.' });
     }
 
-    // Run rule-based fake detection
+    const ocrMeta = await extractTextFromImages(getContentImageSources(post, 'post'));
+    post.moderationMeta = {
+      ...(post.moderationMeta?.toObject?.() || post.moderationMeta || {}),
+      ...ocrMeta,
+    };
+
+    // Run OCR-aware rule-based fake detection
     const result = await runFakeDetectionRuleOnly(post, 'post');
 
     // Apply decision
     const nextStatus = result.approved ? 'approved' : 'rejected';
     const moderationMeta = {
+      ...(post.moderationMeta?.toObject?.() || post.moderationMeta || {}),
       reviewedAt: new Date(),
       reviewMethod: result.approved ? 'auto_approved' : 'auto_rejected',
+      reviewNotes: result.reason,
       autoScore: result.score,
       autoFlags: result.flags,
+      autoReason: result.reason,
+      autoDecision: result.decision,
+      autoSeverity: result.severity,
+      autoReviewedAt: new Date(),
     };
     await Post.updateOne(
       { _id: post._id },

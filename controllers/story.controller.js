@@ -1,6 +1,7 @@
 const Story = require('../models/Story');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../middlewares/upload.middleware');
 const { getInitialModerationState, applyInitialRuleModeration } = require('../utils/adminSettings');
+const { extractTextFromImages, getContentImageSources } = require('../utils/ocrModeration');
 const { sortByPriorityAndNewest } = require('../utils/contentOrdering');
 const {
   STORY_CAPTION_MAX_LENGTH,
@@ -43,6 +44,14 @@ const createStory = async (req, res) => {
         publicId: result.public_id,
       };
       storyData.mediaType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
+      storyData.moderationMeta = {
+        ...storyData.moderationMeta,
+        ...await extractTextFromImages(
+          storyData.mediaType === 'video'
+            ? getContentImageSources(storyData, 'story')
+            : req.file,
+        ),
+      };
     }
 
     const moderatedState = await applyInitialRuleModeration(storyData, 'story', moderationState);

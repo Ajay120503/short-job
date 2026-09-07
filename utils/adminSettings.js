@@ -138,6 +138,7 @@ const applyInitialRuleModeration = async (contentData, type, moderationState = n
   const now = new Date();
   const moderationMeta = {
     ...(state.moderationMeta || {}),
+    ...(contentData.moderationMeta || {}),
     autoScore: result.score,
     autoFlags: result.flags,
     autoReason: result.reason,

@@ -16,6 +16,7 @@ const JobPost = require('./models/JobPost');
 const Story = require('./models/Story');
 const LoginRecord = require('./models/LoginRecord');
 const { runFakeDetectionRuleOnly } = require('./utils/fakeDetectionRuleOnly');
+const { extractTextFromImages, getContentImageSources } = require('./utils/ocrModeration');
 const { getAdminSettings } = require('./utils/adminSettings');
 const { deleteFromCloudinary } = require('./middlewares/upload.middleware');
 const { connectRedis, disconnectRedis, getRedisStatus } = require('./config/redis');
@@ -104,6 +105,12 @@ const runAutoModerationPass = async () => {
 
     for (const item of items) {
       try {
+        if (!item.moderationMeta?.ocrProcessedAt) {
+          item.moderationMeta = {
+            ...(item.moderationMeta?.toObject?.() || item.moderationMeta || {}),
+            ...await extractTextFromImages(getContentImageSources(item, config.type)),
+          };
+        }
         const result = await runFakeDetectionRuleOnly(item, config.type);
         item.status = result.approved ? 'approved' : 'rejected';
         item.moderationMeta = {

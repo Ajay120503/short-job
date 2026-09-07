@@ -78,6 +78,11 @@ const EDUCATION_TERMS = [
   'research',
   'project',
   'career',
+  'education',
+  'student',
+  'teacher',
+  'tutor',
+  'teaching',
   'professional',
   'work',
   'mentor',
@@ -88,7 +93,18 @@ const EDUCATION_TERMS = [
   'business',
 ];
 
-const JOB_REQUIRED_FIELDS = ['title', 'deadline', 'contactEmail'];
+const JOB_REQUIRED_FIELDS = [
+  'title',
+  'institutionName',
+  'shortJobType',
+  'duration',
+  'jobDate',
+  'startTime',
+  'endTime',
+  'stipend',
+  'deadline',
+  'contactEmail',
+];
 const TRUSTED_EMAIL_DOMAINS = ['.edu', '.ac.in', '.org', '.gov', '.school'];
 const PERSONAL_EMAIL_DOMAINS = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'proton.me'];
 
@@ -148,12 +164,27 @@ const collectText = (content, type) => {
     content.content,
     content.description,
     content.institutionName,
+    content.workplaceName,
+    content.workplaceAddress,
+    content.workplaceCity,
+    content.workplaceState,
+    content.workplaceCountry,
     content.requiredQualifications,
     content.roleType,
+    content.shortJobType,
+    content.duration?.value,
+    content.duration?.unit,
+    content.workingHoursPerDay,
+    content.stipend,
+    content.currency,
     content.location,
     content.contactEmail,
+    content.eventDetails?.location,
+    content.resourceUrl,
+    content.moderationMeta?.ocrText,
     ...asArray(content.skillsRequired),
     ...asArray(content.tags),
+    ...(content.pollOptions || []).map((option) => option?.text || option),
   ];
 
   if (type === 'story' && content.image?.url && !content.text) {
@@ -248,7 +279,15 @@ const scoreCommonSignals = ({ rawText, text, type, content, flags }) => {
 
 const scoreJobSignals = ({ content, rawText, text, flags }) => {
   let score = 0;
-  const missing = JOB_REQUIRED_FIELDS.filter((field) => !content?.[field]);
+  const missing = JOB_REQUIRED_FIELDS.filter((field) => {
+    if (field === 'stipend') return !Number.isFinite(Number(content?.stipend)) || Number(content.stipend) <= 0;
+    if (field === 'duration') return !Number.isFinite(Number(content?.duration?.value)) || !content?.duration?.unit;
+    return !content?.[field];
+  });
+  if (content?.location !== 'remote') {
+    ['workplaceName', 'workplaceAddress', 'workplaceCity', 'workplaceState', 'workplaceCountry']
+      .forEach((field) => { if (!content?.[field]) missing.push(field); });
+  }
 
   if (missing.length > 0) {
     score += addFlag(flags, 'missing_required_job_fields', missing.length * 14, 'high', { fields: missing });
@@ -282,8 +321,8 @@ const scoreJobSignals = ({ content, rawText, text, flags }) => {
   const moneyValues = parseMoneyValues(rawText);
   const stipend = Number(content?.stipend || 0);
   const maxMoney = Math.max(stipend, ...moneyValues, 0);
-  if (moneyValues.length >= 4 || stipend > 500000 || maxMoney > 1000000) {
-    score += addFlag(flags, 'unusual_compensation_claim', maxMoney > 1000000 ? 30 : 16, 'high', {
+  if (moneyValues.length >= 4 || stipend > 1000000 || maxMoney > 10000000) {
+    score += addFlag(flags, 'unusual_compensation_claim', maxMoney > 10000000 ? 30 : 16, 'high', {
       maxValue: maxMoney,
     });
   }
@@ -293,12 +332,8 @@ const scoreJobSignals = ({ content, rawText, text, flags }) => {
     score += addFlag(flags, 'job_missing_skills', 10, 'medium');
   }
 
-  if (String(content?.description || '').trim().length < 60) {
+  if (String(content?.description || '').trim().length < 30) {
     score += addFlag(flags, 'job_description_too_short', 16, 'medium');
-  }
-
-  if (String(content?.requiredQualifications || '').trim().length < 10) {
-    score += addFlag(flags, 'job_missing_qualifications', 10, 'medium');
   }
 
   if (content?.deadline && new Date(content.deadline).getTime() < Date.now() - 24 * 60 * 60 * 1000) {
@@ -310,6 +345,63 @@ const scoreJobSignals = ({ content, rawText, text, flags }) => {
     phraseHits(text, ['no experience required', 'guaranteed income', 'daily income', 'copy paste job']).length > 0;
   if (easyMoneyCombo) {
     score += addFlag(flags, 'too_good_to_be_true_remote_job', 26, 'high');
+  }
+
+  const typeRules = {
+    few_hours: { unit: 'hours', min: 0.25, max: 24 },
+    one_day_gig: { unit: 'hours', min: 0.25, max: 24 },
+    weekend_only: { unit: 'days', exact: 2, dailyHours: true },
+    short_term: { unit: 'days', min: 1, max: 7, dailyHours: true },
+  };
+  const typeRule = typeRules[content?.shortJobType];
+  const durationValue = Number(content?.duration?.value);
+  if (typeRule) {
+    const invalidDuration = content?.duration?.unit !== typeRule.unit ||
+      !Number.isFinite(durationValue) ||
+      (typeRule.exact !== undefined && durationValue !== typeRule.exact) ||
+      (typeRule.min !== undefined && durationValue < typeRule.min) ||
+      (typeRule.max !== undefined && durationValue > typeRule.max);
+    if (invalidDuration) {
+      score += addFlag(flags, 'inconsistent_short_job_duration', 18, 'high', {
+        shortJobType: content.shortJobType,
+        duration: content.duration,
+      });
+    }
+    const dailyHours = Number(content?.workingHoursPerDay);
+    if (typeRule.dailyHours && (!Number.isFinite(dailyHours) || dailyHours < 0.25 || dailyHours > 24)) {
+      score += addFlag(flags, 'invalid_daily_working_hours', 16, 'high');
+    }
+    if (!typeRule.dailyHours && content?.workingHoursPerDay != null) {
+      score += addFlag(flags, 'unexpected_daily_working_hours', 6, 'low');
+    }
+  }
+
+  const timeToMinutes = (value) => {
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value || ''))) return null;
+    const [hours, minutes] = value.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+  const startMinutes = timeToMinutes(content?.startTime);
+  const endMinutes = timeToMinutes(content?.endTime);
+  if (startMinutes !== null && endMinutes !== null) {
+    const scheduledHours = ((endMinutes - startMinutes + 1440) % 1440) / 60;
+    if (!scheduledHours) {
+      score += addFlag(flags, 'invalid_job_time_range', 18, 'high');
+    } else {
+      const expectedHours = typeRule?.dailyHours
+        ? Number(content?.workingHoursPerDay)
+        : Number(content?.duration?.value);
+      if (Number.isFinite(expectedHours) && Math.abs(scheduledHours - expectedHours) > 0.02) {
+        score += addFlag(flags, 'schedule_duration_mismatch', 14, 'medium', {
+          scheduledHours,
+          declaredHours: expectedHours,
+        });
+      }
+    }
+  }
+
+  if (content?.jobDate && content?.deadline && new Date(content.deadline) > new Date(content.jobDate)) {
+    score += addFlag(flags, 'deadline_after_job_date', 18, 'high');
   }
 
   return score;
@@ -334,6 +426,17 @@ const scorePostSignals = ({ content, rawText, text, flags }) => {
 
   if (countMatches(rawText, URL_REGEX) > 0 && phraseHits(text, ['payment', 'whatsapp', 'telegram', 'apply now']).length > 0) {
     score += addFlag(flags, 'post_external_application_funnel', 20, 'high');
+  }
+
+  if (content?.type === 'poll') {
+    const options = (content.pollOptions || []).map((option) => normalize(option?.text || option)).filter(Boolean);
+    if (options.length < 2 || new Set(options).size !== options.length) {
+      score += addFlag(flags, 'invalid_or_duplicate_poll_options', 12, 'medium');
+    }
+  }
+
+  if (content?.type === 'event' && content?.eventDetails?.date && new Date(content.eventDetails.date) < new Date()) {
+    score += addFlag(flags, 'expired_event', 10, 'medium');
   }
 
   return score;
