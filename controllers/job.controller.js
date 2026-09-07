@@ -77,6 +77,14 @@ const normalizeListInput = (value = []) => {
 const SHORT_JOB_TYPES = ['few_hours', 'one_day_gig', 'weekend_only', 'short_term'];
 const usesDailyWorkingHours = (type) => type === 'weekend_only' || type === 'short_term';
 const durationUnitForType = (type) => usesDailyWorkingHours(type) ? 'days' : 'hours';
+const calculateScheduleHours = (startTime, endTime) => {
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(startTime || '') || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(endTime || '')) return NaN;
+  const [startHour, startMinute] = startTime.split(':').map(Number);
+  const [endHour, endMinute] = endTime.split(':').map(Number);
+  let minutes = endHour * 60 + endMinute - (startHour * 60 + startMinute);
+  if (minutes <= 0) minutes += 24 * 60;
+  return Number((minutes / 60).toFixed(2));
+};
 
 const validateJobSchedule = ({ shortJobType, durationUnit, durationValue, workingHoursPerDay, jobDate }) => {
   const errors = {};
@@ -547,7 +555,7 @@ const createJob = async (req, res) => {
     const currency = cleanString(req.body.currency) || 'INR';
     const isPaid = true;
     const stipend = Number(req.body.stipend);
-    const workingHoursPerDay = Number(req.body.workingHoursPerDay);
+    let workingHoursPerDay = Number(req.body.workingHoursPerDay);
     const maxApplicants = req.body.maxApplicants === '' || req.body.maxApplicants == null
       ? 0 : Number(req.body.maxApplicants);
     const skills = normalizeListInput(req.body.skillsRequired);
@@ -567,12 +575,21 @@ const createJob = async (req, res) => {
 
     const duration = req.body.duration && typeof req.body.duration === 'object'
       ? req.body.duration : { unit: durationUnit, value: Number(durationValue) };
-    const numericDuration = Number(duration.value);
+    let numericDuration = Number(duration.value);
 
     const validTime = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
     if (!validTime.test(startTime)) errors.startTime = 'Choose a valid start time.';
     if (!validTime.test(endTime)) errors.endTime = 'Choose a valid end time.';
     else if (startTime === endTime) errors.endTime = 'End time must be different from the start time.';
+    if (SHORT_JOB_TYPES.includes(shortJobType)) {
+      duration.unit = durationUnitForType(shortJobType);
+      const scheduleHours = calculateScheduleHours(startTime, endTime);
+      if (Number.isFinite(scheduleHours)) {
+        if (usesDailyWorkingHours(shortJobType)) workingHoursPerDay = scheduleHours;
+        else numericDuration = scheduleHours;
+      }
+      if (shortJobType === 'weekend_only') numericDuration = 2;
+    }
 
     const parsedJobDate = parseLocalDate(jobDate);
     const parsedDeadline = parseLocalDate(deadline);
@@ -838,6 +855,15 @@ const updateJob = async (req, res) => {
       const parsedJobDate = parseLocalDate(req.body.jobDate);
       if (!parsedJobDate) return sendValidationError(res, { jobDate: 'Please provide a valid job date.' });
       job.jobDate = parsedJobDate;
+    }
+    if (SHORT_JOB_TYPES.includes(job.shortJobType)) {
+      job.duration.unit = durationUnitForType(job.shortJobType);
+      const scheduleHours = calculateScheduleHours(job.startTime, job.endTime);
+      if (Number.isFinite(scheduleHours)) {
+        if (usesDailyWorkingHours(job.shortJobType)) job.workingHoursPerDay = scheduleHours;
+        else job.duration.value = scheduleHours;
+      }
+      if (job.shortJobType === 'weekend_only') job.duration.value = 2;
     }
     const scheduleErrors = validateJobSchedule({
       shortJobType: job.shortJobType,
