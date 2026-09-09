@@ -1,10 +1,9 @@
 const { createWorker, OEM } = require('tesseract.js');
 const englishLanguage = require('@tesseract.js-data/eng');
+const { downloadImage } = require('./ocrImageDownload');
 
 const MAX_OCR_IMAGES = 5;
 const MAX_OCR_TEXT_LENGTH = 5000;
-const MAX_REMOTE_IMAGE_BYTES = 6 * 1024 * 1024;
-const REMOTE_IMAGE_TIMEOUT_MS = 15000;
 
 let workerPromise;
 let recognitionQueue = Promise.resolve();
@@ -36,24 +35,6 @@ const enqueueRecognition = (task) => {
   const result = recognitionQueue.then(task, task);
   recognitionQueue = result.catch(() => {});
   return result;
-};
-
-const downloadImage = async (url) => {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REMOTE_IMAGE_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) throw new Error(`Image download failed with HTTP ${response.status}`);
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.startsWith('image/')) throw new Error('OCR source is not an image');
-    const declaredLength = Number(response.headers.get('content-length') || 0);
-    if (declaredLength > MAX_REMOTE_IMAGE_BYTES) throw new Error('OCR image exceeds the size limit');
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length > MAX_REMOTE_IMAGE_BYTES) throw new Error('OCR image exceeds the size limit');
-    return buffer;
-  } finally {
-    clearTimeout(timeout);
-  }
 };
 
 const normalizeSource = async (source) => {

@@ -1,4 +1,5 @@
 const Post = require('../models/Post');
+const { resolvePostImageRemoval } = require('../utils/postImageRemoval');
 const JobPost = require('../models/JobPost');
 const Comment = require('../models/Comment');
 const Notification = require('../models/Notification');
@@ -331,23 +332,20 @@ const updatePost = async (req, res) => {
     let removedPublicIds = [];
     if (req.body.removeImages) {
       try {
-        removedPublicIds = JSON.parse(req.body.removeImages);
-      } catch {
-        removedPublicIds = req.body.removeImages.split(',').map(s => s.trim()).filter(Boolean);
+        removedPublicIds = resolvePostImageRemoval(req.body.removeImages, post.images);
+      } catch (error) {
+        return sendValidationError(res, { removeImages: error.message });
       }
       if (removedPublicIds.length > 0) {
         post.images = post.images.filter(img => !removedPublicIds.includes(img.publicId));
-        for (const publicId of removedPublicIds) {
-          await deleteFromCloudinary(publicId);
-        }
       }
     }
 
     // Upload new images
     if (req.files && req.files.length > 0) {
-      const remainingSlots = 5 - post.images.length;
-      if (remainingSlots <= 0) {
-        return res.status(400).json({ message: 'Maximum 5 images allowed per post.' });
+      const remainingSlots = 4 - post.images.length;
+      if (req.files.length > remainingSlots) {
+        return sendValidationError(res, { images: 'Maximum 4 images allowed per post. Remove an existing image first.' });
       }
       const filesToUpload = req.files.slice(0, remainingSlots);
       for (const file of filesToUpload) {
@@ -381,6 +379,8 @@ const updatePost = async (req, res) => {
     post.moderationMeta = moderatedState.moderationMeta;
 
     await post.save();
+
+    for (const publicId of removedPublicIds) await deleteFromCloudinary(publicId);
 
     const populatedPost = await Post.findById(post._id)
       .populate('author', USER_SIGNAL_SELECT)
