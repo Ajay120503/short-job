@@ -142,12 +142,6 @@ const OTP_RESEND_LIMIT = 5;
 
 const generateOtp = () => crypto.randomInt(100000, 1000000).toString();
 
-const logRenderOtp = (purpose, email, otp) => {
-  if (process.env.RENDER === 'true') {
-    console.log(`[RENDER OTP] ${purpose} | ${email} | ${otp}`);
-  }
-};
-
 const setRegistrationOtp = async (user) => {
   const otp = generateOtp();
   user.otp = await bcrypt.hash(otp, 10);
@@ -166,7 +160,6 @@ const setRegistrationOtp = async (user) => {
   }
 
   await user.save();
-  logRenderOtp('registration', user.email, otp);
   return otp;
 };
 
@@ -215,6 +208,7 @@ const initiateRegister = async (req, res) => {
 
     res.status(201).json({ success: true, message: 'OTP sent to your email.', email: normalizedEmail });
   } catch (error) {
+    if (error.code === 'EMAIL_UNAVAILABLE') return res.status(503).json({ message: error.message });
     console.error('Initiate registration error:', error);
     res.status(500).json({ message: 'Server error during registration.' });
   }
@@ -316,6 +310,7 @@ const resendRegistrationOtp = async (req, res) => {
 
     res.json({ success: true, message: 'OTP resent to your email.', email: user.email });
   } catch (error) {
+    if (error.code === 'EMAIL_UNAVAILABLE') return res.status(503).json({ message: error.message });
     console.error('Resend registration OTP error:', error);
     res.status(500).json({ message: 'Server error while resending OTP.' });
   }
@@ -352,11 +347,7 @@ const register = async (req, res) => {
       verificationTokenExpires: Date.now() + 60 * 60 * 1000, // 1 hour
     });
 
-    // Send verification email (fire-and-forget: don't block the response)
-    sendVerificationEmail(email, name, verificationToken).catch((emailError) => {
-      console.error('Email sending failed:', emailError);
-      // Don't fail registration if email fails - user can resend verification
-    });
+    await sendVerificationEmail(email, name, verificationToken);
 
     // Generate tokens
     const accessToken = generateToken(user._id);
@@ -376,6 +367,7 @@ const register = async (req, res) => {
       accessToken,
     });
   } catch (error) {
+    if (error.code === 'EMAIL_UNAVAILABLE') return res.status(503).json({ message: error.message });
     console.error('Register error:', error);
     res.status(500).json({ message: 'Server error during registration.' });
   }
@@ -678,17 +670,12 @@ const forgotPassword = async (req, res) => {
     user.resetPasswordToken = otp;
     user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
     await user.save();
-    logRenderOtp('password-reset', user.email, otp);
 
-    // Send OTP email
-    try {
-      await sendPasswordResetOTP(email, otp);
-    } catch (emailError) {
-      console.error('Email sending failed:', emailError);
-    }
+    await sendPasswordResetOTP(email, otp);
 
     res.json({ success: true, message: 'Password reset OTP sent to your email.' });
   } catch (error) {
+    if (error.code === 'EMAIL_UNAVAILABLE') return res.status(503).json({ message: error.message });
     console.error('Forgot password error:', error);
     res.status(500).json({ message: 'Server error.' });
   }
